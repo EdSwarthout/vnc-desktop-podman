@@ -1,0 +1,50 @@
+#!/bin/bash
+# nested-subids [-n]: fit nested rootless podman to the IDs this container really has.
+# Run as root at every boot (start.sh calls it via sudo). -n: only print.
+#
+# - /etc/subuid, /etc/subgid: one range per extent of /proc/self/{uid,gid}_map, minus 0
+#   and ed's own ID. The kernel rejects a subid range that spans two extents of the
+#   parent's map, and how many IDs there are and where the extents split depend on how
+#   this container was started (host -> ccN differs from ccN -> ccN_M), so the
+#   build-time defaults in the Containerfile only fit the first level.
+# - /etc/subgid also gets this container's group 0 (ed:0:1). Without it, root in a
+#   nested build can't write to the shared apt cache: apt keeps archives/partial as
+#   _apt:root mode 700, and root may only override permissions on files whose owner
+#   and group are both mapped. Here group 0 is ed's group one level up, and ed has
+#   passwordless sudo anyway. Podman sorts the ranges, so it becomes nested gid 1 and
+#   the other nested gids sit one higher than without it: nested storage created
+#   before this mapping needs `podman system reset` once (REVIEW #28).
+# - newuidmap/newgidmap file caps: setcap in a rootless build stores the builder's root
+#   as the caps' rootid, and the kernel ignores them where root is a different UID
+#   (an image built inside an instance). Setting them again here makes them ours.
+set -euo pipefail
+
+user=ed
+dry=
+[ "${1:-}" = -n ] && dry=1
+
+# ranges MAPFILE OWN_ID: inside-ID ranges of MAPFILE without 0 and OWN_ID, as subid lines
+ranges() {
+    awk -v u="$user" -v own="$2" '
+        function emit(a, b) { if (b >= a) printf "%s:%d:%d\n", u, a, b - a + 1 }
+        { s = $1; e = $1 + $3 - 1
+          if (s == 0) s = 1
+          if (s <= own && own <= e) { emit(s, own - 1); s = own + 1 }
+          emit(s, e) }' "$1"
+}
+
+for kind in uid gid; do
+    if [ $kind = uid ]; then own=$(id -u "$user"); else own=$(id -g "$user"); fi
+    new=$(ranges /proc/self/${kind}_map "$own")
+    if [ $kind = gid ]; then new+=$'\n'"$user:0:1"; fi
+    if [ -n "$dry" ]; then
+        printf '/etc/sub%s:\n%s\n' $kind "$new"
+    elif [ "$new" != "$(cat /etc/sub$kind 2>/dev/null)" ]; then
+        printf '%s\n' "$new" > /etc/sub$kind
+        echo "nested-subids: /etc/sub$kind set to: $(echo $new)" >&2
+    fi
+done
+
+[ -n "$dry" ] && exit
+setcap cap_setuid=ep /usr/bin/newuidmap
+setcap cap_setgid=ep /usr/bin/newgidmap
