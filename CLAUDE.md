@@ -18,8 +18,8 @@ See `README.md` for user-facing setup.
 - `env.rc` — host-side bash helpers, `source`d from any cwd; defaults at the top,
   then `.env` (may override `d_dir`, `d_user`, `d_target`, …), then derived values: `d_0`, `d_build`,
   `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`, `d_logs`,
-  `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, with
-  `d_vnc` in the background), `d_screenshots N [STAGE...]` (retake
+  `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, then
+  `eval "$d_all_cmd"` in the background per instance, default `d_vnc`), `d_screenshots N [STAGE...]` (retake
   `docs/<stage>.png` on a throwaway instance N).
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out

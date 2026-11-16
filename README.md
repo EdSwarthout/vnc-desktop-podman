@@ -251,9 +251,17 @@ the host, update `.env`, `source env.rc`, then `d_run` again — or run
 
 **Try every stage at once:** `d_all N` builds each stage (`base vnc chrome
 xfce lxqt gnome kde mate cinnamon`) and runs it on instance N, N+1, …, opening a `d_vnc` viewer in
-the background for each one with a desktop (log in `/tmp/d_vnc-<name>.log`).
+the background for each one with a desktop (log in `/tmp/d_all-<name>.log`).
 `d_all 11 xfce lxqt` limits it to those stages. N is required, because
 `d_run` replaces whatever instance has that number.
+What runs once each desktop is up is `$d_all_cmd` (default `d_vnc`): set it in
+`.env` or per command to any shell command, which runs with that instance
+selected (`$d_name`, `$d_home`, `$d_target`), or to empty for nothing:
+```bash
+d_all_cmd=d_novnc d_all 11 xfce lxqt                  # browser instead
+d_all_cmd='podman logs "$d_name"' d_all 11 gnome      # save each boot log
+d_all_cmd= d_all 11                                   # just build and run
+```
 
 **Retake the screenshots in `docs/`:** `d_screenshots N [STAGE...]` builds each
 desktop stage, runs it on a new home as instance N (which must be unused; it is
