@@ -97,7 +97,8 @@ stop the container) use **Applications → System Tools → Log Out (stop the
 container)**, or `podman stop`. Screen locking is switched off (see `kde`).
 
 `gnome` also has the Claude desktop app (`claude-desktop`, from Anthropic's apt
-repository). It keeps its secrets in the GNOME keyring, so the session gives a
+repository). It is only available in the `gnome` stage: the app is still in
+beta, so the other desktop stages don't include it. It keeps its secrets in the GNOME keyring, so the session gives a
 new home a default keyring without a password: nothing asks for one at the
 app's first start. Secrets in it are not encrypted, only protected by the
 home's file permissions. A home that already has a default keyring keeps it.

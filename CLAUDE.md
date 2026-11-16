@@ -89,7 +89,8 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   for Log Out. The panel layout is forced to `gnome-flashback` (Ubuntu's
   default wants an indicator applet that isn't installed). gnome-flashback's
   `screensaver` component is off (it locked after 5 idle minutes; no password).
-- **`claude-desktop`** (the Claude desktop app) is in the `gnome` stage only. It
+- **`claude-desktop`** (the Claude desktop app) is in the `gnome` stage only, on
+  purpose: it is still in beta, so don't add it to the other desktop stages. It
   comes from Anthropic's apt repository: the Containerfile downloads the signing
   key (`https://downloads.claude.ai/keys/claude-code.asc`) and writes
   `claude-desktop.list` to the paths the package's own postinst uses, then
