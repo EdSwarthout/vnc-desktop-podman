@@ -98,7 +98,13 @@ vncserver :1 -fg -desktop "${D_NAME:-$(hostname)}:1 ($(id -un))" -geometry "$VNC
 vnc_pid=$!
 
 # Browser access: http://localhost:6080/vnc.html
-websockify --web=/usr/share/novnc 6080 localhost:5901 &
+# Listen on [::], which takes IPv4 too (bindv6only is 0), so the published port also
+# works over IPv6, e.g. via localhost = ::1; IPv4 only if the container has no IPv6.
+listen=6080
+if [ -n "$(cat /proc/net/if_inet6 2>/dev/null)" ] && [ "$(cat /proc/sys/net/ipv6/bindv6only 2>/dev/null)" = 0 ]; then
+    listen='[::]:6080'
+fi
+websockify --web=/usr/share/novnc "$listen" localhost:5901 &
 
 rc=0
 wait -n -p done_pid || rc=$?
