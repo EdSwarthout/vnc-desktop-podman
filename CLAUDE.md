@@ -135,5 +135,72 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - `start.sh` runs under `set -e`: make first-boot steps idempotent and
   non-failing on re-run.
 - Update README when a change is user-visible.
-- Commit only when asked. Desktop variants are stages in the one
-  `Containerfile` (not branches).
+- Commit only when asked, directly on `main` (no feature branches; the user
+  usually tries a change on the host first, then says "commit this"). Never
+  push. Desktop variants are stages in the one `Containerfile` (not branches).
+
+## Testing a change from inside an instance
+You are `ed` with **no root** here (`sudo` only runs `nested-subids`), and the
+image has no apt lists. Everything below uses the nested podman.
+- **Build**: `source ./env.rc; d_target=<stage> d_build > LOG 2>&1` — takes
+  minutes (use a long timeout, log to a file, check the exit status). Changing
+  `start.sh` or anything in `base` rebuilds every later stage.
+- **Run a throwaway instance**: `d_run_new` (picks a free number), then
+  `d_target=<stage> d_run`. It is `<this instance>_N`, e.g. `cc1_1`, with home
+  `~/Containers/cc1_1`, which is directly readable here: copy files in and
+  out with plain `cp` (e.g. `cp -r tests ~/Containers/cc1_1/`), no `podman cp`
+  needed. No `.env` is needed: it gets a copy of this instance's VNC password.
+- **Look at it**: `podman exec cc1_1 /home/ed/tests/screenshot.sh /home/ed/s.png`,
+  then Read `~/Containers/cc1_1/s.png`. Give a desktop 15-40 s to come up first.
+  Start GUI apps with `podman exec -d cc1_1 <app>` (DISPLAY is already set).
+- **Root for experiments**: `podman exec -u root cc1_1 sh -c 'apt-get update &&
+  apt-get install -y …'` (try packages there before editing the Containerfile;
+  `xdotool` is handy for keys/clicks). To query apt without an instance:
+  `podman run --rm --user root u2604cc:chrome sh -c 'apt-get update -qq; apt-cache policy PKG'`.
+- **Checks worth repeating** for any stage: `tests/tests.sh` inside it (4 ok);
+  `podman inspect` and process environments contain no `VNC_PASSWORD`;
+  `sudo -n true` is refused; noVNC answers on `http://127.0.0.1:<6080+N>/vnc.html`
+  and `[::1]`; ending the session stops the container (`podman ps -a` shows
+  Exited, log says "vncserver exited") and `podman start` brings it back.
+- **Clean up** what you started: `podman rm -f -t 2 cc1_1` then
+  `podman unshare rm -rf ~/Containers/cc1_1` (plain `rm` fails on sub-ID-owned
+  files). `podman rm` sometimes prints an `openByHandleAt` error about exec
+  sessions; run it again and check `podman ps -a`.
+- **Not testable here**: the real host (NFS apt cache, host paths, other UIDs).
+  Say so instead of guessing; the user tests on the host.
+
+## Adding a desktop stage (checklist)
+1. `Containerfile`: `FROM chrome AS <name>`, `USER root`, one sorted apt `RUN`
+   with the standard tail, a `RUN` writing `/usr/local/bin/vnc-session`, then
+   `USER ${USERID}`; add the stage to the list in the header comment.
+2. Find out what works before writing it: is there an X11 session at all
+   (GNOME Shell: no), does its session manager need systemd/logind (start
+   the parts by hand if so, as in `gnome`)? Try it in a throwaway instance.
+3. Look at a screenshot of a **fresh home**. Ubuntu's default panel layouts
+   often reference applets that `--no-install-recommends` leaves out (empty
+   panel, "Error" boxes, blank icons): fix with a gsettings override in
+   `/usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override` +
+   `glib-compile-schemas --strict`, as in `gnome`/`mate`/`cinnamon`.
+4. **Screen lock must be impossible** (no password to unlock): test an explicit
+   lock request and the keyboard shortcut, not just the settings.
+5. Log out from the desktop must end the session (so the container stops), or
+   provide a replacement and document it.
+6. A screenshot tool that can save to a file without a dialog (`scrot` if
+   the desktop's own can't), and a branch for it in `tests/screenshot.sh`.
+7. `env.rc`: add to `d_targets` and the `d_target` comment.
+8. Docs: README (intro sentence, file table, Stages text and table, Screenshots
+   item, `d_all` list), this file (intro, Files, design decisions), and
+   `docs/` (`d_screenshots N <name>`, plus a section in `docs/README.md`).
+
+## Gotchas met so far
+- `[ -s FILE ]` is always false for `/proc` files (size 0): test the content.
+- `localhost` may resolve to `::1` first; a published port whose service only
+  listens on IPv4 then accepts and resets. Use `127.0.0.1` in checks.
+- `pgrep NAME` matches only the first 15 characters of a process name; use
+  `pgrep -f` for longer ones.
+- `sed` succeeds when nothing matched: in the Containerfile, pair an edit of a
+  packaged file with a `grep -q` so an upstream change fails the build.
+- A gsettings override only changes defaults: a home that already set the key
+  keeps its value, so test on a fresh home.
+- `$VNC_PASSWORD` may still be in this instance's environment (instances
+  created before the `passwd.init` change); never print it.
