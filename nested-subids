@@ -1,6 +1,7 @@
 #!/bin/bash
 # nested-subids [-n]: fit nested rootless podman to the IDs this container really has.
-# Run as root at every boot (start.sh calls it via sudo). -n: only print.
+# Run as root at every boot: start.sh calls it via sudo, the only thing the container
+# user may sudo, and only without arguments. -n: only print (needs no root).
 #
 # - /etc/subuid, /etc/subgid: one range per extent of /proc/self/{uid,gid}_map, minus 0
 #   and ed's own ID. The kernel rejects a subid range that spans two extents of the
@@ -10,16 +11,19 @@
 # - /etc/subgid also gets this container's group 0 (ed:0:1). Without it, root in a
 #   nested build can't write to the shared apt cache: apt keeps archives/partial as
 #   _apt:root mode 700, and root may only override permissions on files whose owner
-#   and group are both mapped. Here group 0 is ed's group one level up, and ed has
-#   passwordless sudo anyway. Podman sorts the ranges, so it becomes nested gid 1 and
+#   and group are both mapped. Here group 0 is ed's group one level up. It is a
+#   deliberate, small grant: ed has no other root access in the container (sudo is
+#   limited to this script), but can reach this container's gid 0 through a nested
+#   container. Podman sorts the ranges, so it becomes nested gid 1 and
 #   the other nested gids sit one higher than without it: nested storage created
-#   before this mapping needs `podman system reset` once (REVIEW #28).
+#   before this mapping needs `podman system reset` once.
 # - newuidmap/newgidmap file caps: setcap in a rootless build stores the builder's root
 #   as the caps' rootid, and the kernel ignores them where root is a different UID
 #   (an image built inside an instance). Setting them again here makes them ours.
 set -euo pipefail
 
-user=ed
+# The container user: who ran sudo; else the image's USERID (podman exec -u root, -n)
+user=${SUDO_USER:-${USERID:-ed}}
 dry=
 [ "${1:-}" = -n ] && dry=1
 

@@ -14,9 +14,14 @@ ARG BASE=docker.io/library/ubuntu:26.04
 # Stage "base": minimal image with nested rootless podman, network and debug tools
 FROM ${BASE} AS base
 
+# The container user. d_build passes d_user and the builder's UID, so that with
+# PODMAN_USERNS=keep-id it is the host user and owns the home volume.
+ARG USERID=ed
+ARG USER_UID=1001
+
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
-    USERID=ed
+    USERID=${USERID}
 
 # Keep downloaded .debs: d_build/d_run mount the shared (NFS) $d_aptcache on
 # /var/cache/apt/archives. Ubuntu's docker-clean deletes .debs after every install, so
@@ -28,45 +33,74 @@ RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
         > /etc/apt/apt.conf.d/docker-no-pkgcache
 
-# Basics, network/debug tools, and nested rootless podman
+# Basics, network/debug and development tools, and nested rootless podman. The user
+# has no root in the container (below), so what's needed at runtime has to be here.
 # keep list sorted
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    bc \
+    bind9-dnsutils \
+    build-essential \
+    bzip2 \
     ca-certificates \
     catatonit \
     curl \
     emacs-nox \
+    file \
     fuse-overlayfs \
+    gh \
     git \
     gnupg \
     iproute2 \
     iputils-ping \
+    jq \
+    less \
     libcap2-bin \
+    lsof \
     nano \
+    netcat-openbsd \
     nodejs \
     npm \
+    openssh-client \
     passt \
+    patch \
     podman \
     procps \
+    python3-pip \
+    python3-venv \
     ripgrep \
+    rsync \
+    shellcheck \
     strace \
     sudo \
+    tmux \
+    tree \
     uidmap \
+    unzip \
     wget \
+    xz-utils \
+    zip \
     && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
-# Non-root user (ubuntu base images may already ship an "ubuntu" user, so use our own name)
-RUN useradd -m -s /bin/bash -G sudo ${USERID} \
-    && echo "${USERID} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERID}
+# Non-root user with a fixed UID; a user the base image ships with that UID (Ubuntu's
+# "ubuntu" is 1000) makes way. No general root: the only thing it may sudo is the
+# boot-time nested-subids (root-owned, and "" = without arguments), which start.sh
+# runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
+RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
+    && { [ -z "$old" ] || userdel -r "$old"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
+    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
+    && chmod 440 /etc/sudoers.d/${USERID} \
+    && visudo -cf /etc/sudoers.d/${USERID}
 
 # Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
-# useradd's default ed:165536:65536 is outside it. Use 1-1000 and 1002-65535 (skip
-# ed's own 1001): inner containers get root->ed plus 65534 subids. subgid also gets
+# useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
+# (skip the user's own; for ed, 1001: 1-1000 and 1002-65535): inner containers get root->ed plus 65534 subids. subgid also gets
 # group 0 (ed:0:1), so root in a nested build can use the shared apt cache (see
 # nested-subids). These are defaults: at every boot start.sh runs nested-subids, which
 # rewrites them from the container's actual ID map (needed one level deeper, e.g.
 # ccN_M) and re-applies the file caps below.
-RUN printf '%s:1:1000\n%s:1002:64534\n' ${USERID} ${USERID} > /etc/subuid \
+RUN printf '%s:1:%d\n%s:%d:%d\n' ${USERID} $((USER_UID - 1)) ${USERID} $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
     && { cat /etc/subuid; printf '%s:0:1\n' ${USERID}; } > /etc/subgid
 
 # setuid-root newuidmap runs with euid 0, which is not the owner of the new user
@@ -153,7 +187,8 @@ RUN curl -fsSLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Chrome needs these flags in a container (no user-namespace sandbox).
-# Wrapper in /usr/local/bin shadows /usr/bin on PATH; menu entries are pointed at it too,
+# Wrapper in /usr/local/bin shadows /usr/bin on PATH; menu entries are pointed at it too
+# (the build fails if a new Chrome's .desktop files no longer have the expected Exec=),
 # and it outranks Chrome's own alternatives (priority 200), because XFCE's default
 # WebBrowser (exo-open --launch WebBrowser) is sensible-browser -> x-www-browser.
 RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --no-first-run --no-default-browser-check "$@"\n' \
@@ -163,8 +198,12 @@ RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --no-firs
     && for alt in gnome-www-browser google-chrome x-www-browser; do \
            update-alternatives --install /usr/bin/$alt $alt /usr/local/bin/google-chrome-stable 300; \
        done \
-    && sed -i 's|^Exec=/usr/bin/google-chrome-stable|Exec=/usr/local/bin/google-chrome-stable|' \
-        /usr/share/applications/google-chrome.desktop /usr/share/applications/com.google.Chrome.desktop
+    && for f in google-chrome com.google.Chrome; do \
+           sed -i 's|^Exec=/usr/bin/google-chrome-stable|Exec=/usr/local/bin/google-chrome-stable|' \
+               /usr/share/applications/$f.desktop \
+           && grep -q '^Exec=/usr/local/bin/google-chrome-stable' /usr/share/applications/$f.desktop \
+           || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
+       done
 
 USER ${USERID}
 

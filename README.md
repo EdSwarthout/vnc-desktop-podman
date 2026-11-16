@@ -12,23 +12,24 @@ and the Claude install survive rebuilds.
 | `start.sh`      | Container entrypoint: first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
-| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, …)    |
-| `.env`          | Your VNC password (not in git)                                |
-| `REVIEW.md`     | Review notes and their status                                 |
+| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
+| `.env`          | Your VNC password and local settings (not in git)             |
 
 ## Requirements
 
 - Linux host, amd64 (the Chrome `.deb` is amd64-only), `podman` (rootless).
 - Optional: `vncviewer` (TigerVNC) on the host for `d_vnc`; otherwise any
   browser works via noVNC.
-- The container user is `ed`, UID 1001. `env.rc` sets `PODMAN_USERNS=keep-id`,
-  which maps your host user into the container. This lines up cleanly when
-  your host UID is also 1001; otherwise change `USERID` in the Containerfile
-  and `d_user` in `env.rc`.
+- The container user is named `ed` (`d_user`) and gets the UID of whoever runs
+  `d_build`. `env.rc` sets `PODMAN_USERNS=keep-id`, which maps your host user
+  to that same UID in the container, so it owns the home dir. Build on each
+  machine (or as each user) whose UID differs. For another name, set
+  `d_user=…` in `.env` (step 2).
 
 ## One-time setup
 
-1. **Set `d_dir` in `env.rc`** to a host directory for container data.
+1. **Choose `d_dir`**, a host directory for container data, and set it in
+   `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
    - `d_home0=$d_dir/u2604cc` — prefix for each instance's home dir
      (instance 1 → `$d_dir/u2604cc1`).
@@ -44,9 +45,14 @@ and the Claude install survive rebuilds.
      On a client, mount it at that client's `$d_aptcache`.
 
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
-   the first 8 characters):
+   the first 8 characters) and your `d_dir`. `env.rc` sources it, so it can
+   override any of the defaults at the top of `env.rc` (`d_dir`, `d_user`,
+   `d_target`, `d_aptcache`, `d_home0`):
    ```bash
-   echo 'export VNC_PASSWORD=yourpass' > .env
+   cat > .env <<'EOF'
+   export VNC_PASSWORD=yourpass
+   d_dir=/srv/containers
+   EOF
    chmod 600 .env
    ```
 
@@ -72,7 +78,7 @@ so building one doesn't replace another.
 
 | Stage    | Adds                                                        | Session        |
 |----------|-------------------------------------------------------------|----------------|
-| `base`   | Ubuntu, network/debug tools, editors, nested rootless podman, `install_claude` | none: headless, use `podman exec -it ccN bash` |
+| `base`   | Ubuntu, network/debug and development tools (compilers, Python, Node, `gh`, …), editors, nested rootless podman, `install_claude` | none: headless, use `podman exec -it ccN bash` |
 | `vnc`    | TigerVNC server/viewer, noVNC                               | `xterm`        |
 | `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts              | `xterm`        |
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
@@ -94,16 +100,20 @@ named differently; see item 4 of "Inside the container"):
 | N        | `ccN`          | 6900+N          | 6080+N            |
 
 ```bash
-d_select 1     # or d_run_new to pick the next number
+d_select 1     # or d_run_new: the next number with no container and no home dir yet
 d_run          # creates the home dir and starts (or replaces) the container
 ```
 
-On first start, `start.sh` writes `~/.config/tigervnc/passwd` from
-`$VNC_PASSWORD` and an `xstartup` that runs the stage's session (an `xstartup`
-written by older versions, which always started XFCE, is replaced; a customised
-one is kept). After that the stored
-password is used, and `d_run` no longer passes `VNC_PASSWORD` into the container
-(so it doesn't linger in its environment or `podman inspect`).
+The VNC password never goes into the container's environment (where it would
+show in `podman inspect` and be inherited by everything on the desktop). While
+the home has no `~/.config/tigervnc/passwd`, `d_run` writes `$VNC_PASSWORD` to
+`passwd.init` next to it (mode 600) and refuses to start without one; on first
+start `start.sh` turns that into `passwd` and deletes it. After that the stored
+password is used. (An instance created by an older `d_run` still has
+`VNC_PASSWORD` in its environment: `d_run` it again once.) `start.sh` also
+writes an `xstartup` that runs the stage's session (an `xstartup` written by
+older versions, which always started XFCE, is replaced; a customised one is
+kept).
 
 `d_run` uses `--replace`, so running it again restarts the instance from the
 current image; the home dir is kept.
@@ -117,8 +127,10 @@ which one exited.
 
 ## Connect to the desktop
 
-- **Browser (noVNC):** `http://<host>:6081/vnc.html` for instance 1
-  (6080+N in general), then enter the VNC password.
+- **Browser (noVNC):** `d_novnc` opens the selected instance's page in your
+  default browser (`xdg-open`); from another machine it's
+  `http://<host>:6081/vnc.html` for instance 1 (6080+N in general). Then
+  enter the VNC password.
 - **VNC client:** `d_vnc` runs `vncviewer` against the selected instance using
   its stored password file. From another machine, point a VNC client at
   `<host>:6901` (6900+N).
@@ -160,9 +172,11 @@ which one exited.
    `~/Containers` as `d_dir` (nested instance N of `cc3` is named `cc3_N`,
    with home `~/Containers/cc3_N`; inside `cc3_1` its children are `cc3_1_N`;
    the VNC title and shell prompt show that name, though `hostname` says `cc3`) and the instance's apt cache, so `d_build`/`d_run`
-   build and run a nested desktop. Its ports are published only inside the
-   instance, so connect from there (`d_vnc`, `tigervnc-viewer`).
-   `tests/tests.sh` checks it all (run, published port, build); an instance
+   build and run a nested desktop. Without a `.env` there, the nested desktop
+   gets a copy of this instance's VNC password file. Its ports are published
+   only inside the instance, so connect from there (`d_vnc`, `tigervnc-viewer`).
+   `tests/tests.sh` checks it all (run, published port, build), printing
+   ok/FAIL per check and failing if any did; an instance
    created before `d_run` added `unmask=/proc/*` needs recreating with `d_run`.
    Nested containers also get the instance's root group (`ed:0:1` in
    `/etc/subgid`), so a nested build can use the shared apt cache. That shifts
@@ -172,13 +186,18 @@ which one exited.
 5. **Screenshots** (`xfce`, `lxqt`): `tests/screenshot.sh [FILE.png]` saves a
    full-screen PNG of the desktop and prints its path.
 
-`ed` has passwordless `sudo`, so `sudo apt install …` works; packages added this
-way are lost when the container is replaced — add lasting ones to the
-`Containerfile`.
+**No root inside.** The image is meant to carry everything needed: `ed` has no
+general `sudo` (the one exception is the boot-time `nested-subids`, which
+`start.sh` runs). To add a package, put it in the `Containerfile` (`base`
+stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
+`podman exec -u root ccN apt-get update` / `… apt-get install -y PKG` (lost
+when the container is replaced). Per-user tools need no root: `pip` in a
+`python3 -m venv`, `npm install` in a project or with `--prefix ~/.local`,
+and containers in the nested podman.
 
 ## Day-to-day
 
-In a new shell, `source env.rc` and `d_select N` before using `d_run`/`d_vnc`
+In a new shell, `source env.rc` and `d_select N` before using `d_run`/`d_vnc`/`d_novnc`
 (they refuse to run with no instance selected).
 
 ```bash
@@ -190,8 +209,8 @@ podman exec -it cc1 bash   # shell without the desktop
 ```
 
 **Change the VNC password:** delete `${d_home0}N/.config/tigervnc/passwd` on
-the host, update `.env`, then `d_run` again — or run `vncpasswd` inside the
-container and restart it.
+the host, update `.env`, `source env.rc`, then `d_run` again — or run
+`vncpasswd` inside the container and restart it.
 
 **Try every stage at once:** `d_all N` builds each stage (`base vnc chrome
 xfce lxqt`) and runs it on instance N, N+1, …, opening a `d_vnc` viewer in

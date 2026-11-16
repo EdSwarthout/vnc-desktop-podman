@@ -36,8 +36,8 @@ if [ -x /usr/local/sbin/nested-subids ]; then
     if [ "$old" != "$(cat /etc/subuid /etc/subgid)" ]; then
         podman system migrate || echo "start.sh: podman system migrate failed" >&2
     fi
-    # Nested storage created before /etc/subgid had ed:0:1 has its group IDs one off
-    # (REVIEW #28). A marker records storage that's known good; warn if there's no marker
+    # Nested storage created before /etc/subgid had ed:0:1 has its group IDs one off.
+    # A marker records storage that's known good; warn if there's no marker
     # but image layers exist (empty storage, e.g. just created by migrate above, is fine).
     m=~/.local/share/containers/.subgid-root-mapped
     if [ ! -e "$m" ]; then
@@ -59,11 +59,20 @@ fi
 
 vncdir=~/.config/tigervnc
 mkdir -p "$vncdir"
-if [ ! -f "$vncdir/passwd" ]; then
-    : "${VNC_PASSWORD:?no $vncdir/passwd and VNC_PASSWORD not set}"
-    echo "$VNC_PASSWORD" | vncpasswd -f > "$vncdir/passwd"
-    chmod 600 "$vncdir/passwd"
+# First boot: make passwd from passwd.init, which d_run left in the home (or from
+# $VNC_PASSWORD, for a plain `podman run -e`). -s, not -f: a failed vncpasswd leaves an
+# empty file. Either way the clear-text copies go: the file is deleted and the variable
+# isn't passed on to the VNC server and the desktop.
+if [ ! -s "$vncdir/passwd" ]; then
+    if [ -s "$vncdir/passwd.init" ]; then
+        pw=$(cat "$vncdir/passwd.init")
+    else
+        pw=${VNC_PASSWORD:?no $vncdir/passwd or passwd.init, and VNC_PASSWORD not set}
+    fi
+    ( umask 077; printf '%s\n' "$pw" | vncpasswd -f > "$vncdir/passwd" )
 fi
+rm -f "$vncdir/passwd.init"
+unset VNC_PASSWORD pw
 # The session comes from the image (/usr/local/bin/vnc-session: xterm, XFCE or LXQt), so
 # a home works with any stage. Write xstartup if it's missing or is the XFCE-only one
 # older versions generated; a customised xstartup is left alone.

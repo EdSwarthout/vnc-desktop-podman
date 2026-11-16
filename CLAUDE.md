@@ -2,7 +2,7 @@
 
 Rootless-podman image: Ubuntu 26.04 + XFCE or LXQt over TigerVNC/noVNC, with
 Chrome, Claude Code and nested podman (plus smaller headless/xterm stages).
-See `README.md` for user-facing setup; `REVIEW.md` tracks review items and their status.
+See `README.md` for user-facing setup.
 
 ## Files
 - `Containerfile` — stages `base` (headless + nested rootless podman) →
@@ -15,14 +15,16 @@ See `README.md` for user-facing setup; `REVIEW.md` tracks review items and their
   either does, so the container stops; otherwise (`base`) `exec sleep infinity`.
 - `nested-subids` — `/usr/local/sbin`; `start.sh` runs it via `sudo` at every
   boot to fit subids and `newuidmap` caps to the container.
-- `env.rc` — host-side bash helpers, `source`d from any cwd: `d_0`, `d_build`,
-  `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_logs`,
+- `env.rc` — host-side bash helpers, `source`d from any cwd; defaults at the top,
+  then `.env` (may override `d_dir`, `d_user`, `d_target`, …), then derived values: `d_0`, `d_build`,
+  `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`, `d_logs`,
   `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, with
   `d_vnc` in the background).
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` (xfce, lxqt); copy it out
   with `podman cp` and look at it to check a desktop by script.
-- `.env` — `export VNC_PASSWORD=…` (gitignored, never commit or print it).
+- `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
+  (gitignored, never commit or print it). Usually absent inside an instance.
 
 ## Where you're probably running
 Claude Code usually runs *inside* an instance (e.g. `cc1`) with this repo on
@@ -35,10 +37,13 @@ build and run a nested instance in the nested podman, not a host one. Check thin
 `mountpoint /var/cache/apt/archives`, `~/.config/tigervnc`) and test `env.rc`
 changes with a stubbed `podman`, both ways (`container=` for host behaviour):
 ```bash
-bash -c 'podman(){ echo "[podman $*]"; }; mkdir(){ :; }; source ./env.rc; d_select 1; d_run'
-container= bash -c 'podman(){ echo "[podman $*]"; }; mkdir(){ :; }; source ./env.rc; d_select 1; d_run'
+T=$(mktemp -d)   # d_run really creates the home dir and its passwd.init there
+VNC_PASSWORD=x bash -c 'podman(){ echo "[podman $*]"; }; source ./env.rc; d_home0='$T'/n; d_select 1; d_run'
+VNC_PASSWORD=x container= bash -c 'podman(){ echo "[podman $*]"; }; source ./env.rc; d_home0='$T'/h; d_select 1; d_run'
 ```
-The user builds, runs and pushes from the host. There is no git remote here.
+(`d_run_new` loops on `podman container exists`, so stub that to fail.)
+The user builds, runs and pushes from the host. This clone has an `origin`
+(GitHub), but don't push from here: commit locally and leave the push to the user.
 
 ## Design decisions (don't undo without asking)
 - **Home is a volume** (`$d_dir/u2604ccN` → `/home/ed`). Anything put in
@@ -52,9 +57,18 @@ The user builds, runs and pushes from the host. There is no git remote here.
   with `{ mountpoint -q /var/cache/apt/archives || apt-get clean; }` and
   `rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin`. Keep that tail on new
   apt `RUN`s. Not a buildah cache mount, because it must be shareable over NFS.
-- **VNC password** is passed (`-e VNC_PASSWORD`) only while
-  `~/.config/tigervnc/passwd` doesn't exist, so it doesn't stay in the
-  container env / `podman inspect`.
+- **VNC password** never goes in the container env (it stayed in `podman
+  inspect` and every desktop process inherited it). While the home has no
+  `~/.config/tigervnc/passwd`, `d_run` writes `passwd.init` (600) beside it,
+  or nested without `$VNC_PASSWORD` copies this instance's `passwd`;
+  `start.sh` converts and deletes it, and unsets a `$VNC_PASSWORD` given by a
+  plain `podman run -e`.
+- **No root for the user**: no `sudo` group or blanket rule; sudoers allows only
+  `/usr/local/sbin/nested-subids ""` (no arguments). So everything needed at
+  runtime goes in the `base` package list; don't add steps that need `sudo`.
+- **User and UID** are build args (`USERID`, `USER_UID`; `d_build` passes
+  `$d_user` and `id -u`), so keep-id lines up for any host user. Scripts use
+  `$USERID` / `$SUDO_USER`, not a literal `ed`.
 - **Session comes from the image**: each stage with a display installs
   `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt`); the home's
   `xstartup` only runs it under `dbus-launch`, so a home works with any stage.
@@ -66,7 +80,7 @@ The user builds, runs and pushes from the host. There is no git remote here.
 - **Chrome** runs via the `/usr/local/bin/google-chrome-stable` wrapper
   (`--no-sandbox` etc.); `~/.config/chrome-flags.conf` does nothing on Ubuntu.
 - **Ports bind all interfaces** on purpose (trusted LAN). Accepted.
-- `PODMAN_USERNS=keep-id`; container user `ed` is UID 1001, same as on the host.
+- `PODMAN_USERNS=keep-id`; container user `ed` is UID 1001 by default, same as on the host.
 - `label=disable` (not `:z`) on mounts.
 - **Nested podman** (every stage): `/etc/subuid`/`subgid` are `ed:1:1000` +
   `ed:1002:64534` (subgid also `ed:0:1`, below), because the outer rootless container only has UIDs 0–65535;
@@ -94,8 +108,6 @@ The user builds, runs and pushes from the host. There is no git remote here.
   expansions; functions that need an instance call `_d_need_instance`.
 - `start.sh` runs under `set -e`: make first-boot steps idempotent and
   non-failing on re-run.
-- When fixing a REVIEW.md item: flip its status (✅ done · ➖ accepted · ⬜ open),
-  add a `*Done (\`<commit>\`):*` note saying what changed and how it was
-  checked, and update README if user-visible.
+- Update README when a change is user-visible.
 - Commit only when asked. Desktop variants are stages in the one
   `Containerfile` (not branches).
