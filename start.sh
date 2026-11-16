@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+# Capabilities added with `podman run --cap-add` (e.g. NET_RAW, for ping) are ambient for
+# the non-root user, so every process of the session holds them, and bwrap then refuses to
+# run ("Unexpected capabilities but not setuid"): desktops load icons through gdk-pixbuf ->
+# glycin -> bwrap, so that fails and the session aborts. Clear them from the ambient set;
+# they stay in the bounding set, so programs with file caps (ping: cap_net_raw=ep) still
+# get them.
+if [ "$(awk '/^CapAmb:/ { print $2 }' /proc/self/status)" != 0000000000000000 ]; then
+    exec setpriv --inh-caps=-all --ambient-caps=-all "$0" "$@"
+fi
+
 # First-boot setup in the (volume-mounted) home dir
 
 # New home: seed dotfiles from /etc/skel (the volume mount hides what useradd copied)

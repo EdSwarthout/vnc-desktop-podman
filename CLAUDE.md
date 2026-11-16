@@ -236,3 +236,12 @@ image has no apt lists. Everything below uses the nested podman.
   host. Nested, the flag is accepted but has no effect.
 - `$VNC_PASSWORD` may still be in this instance's environment (instances
   created before the `passwd.init` change); never print it.
+- `--cap-add` (e.g. `NET_RAW` in `d_run_opts`, for ping) makes the cap *ambient*
+  for the non-root user, so every process holds it, and `bwrap` then refuses to run
+  ("Unexpected capabilities but not setuid"). Desktops load icons via gdk-pixbuf →
+  glycin → `bwrap`, so the session aborted (signal 6, "Could not load a pixbuf").
+  `start.sh` therefore re-execs itself under `setpriv --inh-caps=-all
+  --ambient-caps=-all`: the cap stays in the bounding set, so file-cap binaries
+  (`ping`: `cap_net_raw=ep`) still get it. `podman exec` processes still have the
+  ambient cap: prefix GUI apps (and `tests/screenshot.sh`) with that `setpriv`.
+  Check with `grep Cap /proc/<pid>/status`.
