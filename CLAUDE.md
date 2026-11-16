@@ -226,5 +226,13 @@ image has no apt lists. Everything below uses the nested podman.
   packaged file with a `grep -q` so an upstream change fails the build.
 - A gsettings override only changes defaults: a home that already set the key
   keeps its value, so test on a fresh home.
+- Thread/process spawn failing with EAGAIN ("Resource temporarily unavailable",
+  e.g. claude-desktop's tokio panic) is the instance's cgroup pids limit: nested
+  containers have no cgroup of their own (`cgroups = "disabled"`), so all of them
+  count against the outer instance's `pids.max`. Check `/sys/fs/cgroup/pids.max`,
+  `pids.current`, `pids.peak` and `pids.events` (count of refused spawns). KDE alone
+  is ~550 threads. `d_run` sets `--pids-limit $d_pids_limit` (16384; podman's default
+  is 2048); it can't be raised from inside, only by recreating the instance on the
+  host. Nested, the flag is accepted but has no effect.
 - `$VNC_PASSWORD` may still be in this instance's environment (instances
   created before the `passwd.init` change); never print it.

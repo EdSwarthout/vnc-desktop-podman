@@ -217,6 +217,12 @@ which one exited.
    podman rm -f -t 2 cc3_1
    podman unshare rm -rf ~/Containers/cc3_1    # plain rm can't delete all of it
    ```
+   Nested instances count against this instance's limit on processes and
+   threads (`d_pids_limit` in `env.rc`, 16384; `cat /sys/fs/cgroup/pids.max`
+   shows it). An instance created before that setting has podman's 2048, which
+   several nested desktops use up: apps then fail to start with "Resource
+   temporarily unavailable". Recreate it from the host with `d_run` (the home
+   is kept) to get the higher limit.
    The same `podman unshare rm -rf` is needed on the host to delete an
    instance's `.local/share/containers`. If `start.sh` warns at boot about
    older nested storage, run `podman system reset` once as it says. How the
