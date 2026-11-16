@@ -7,7 +7,7 @@ ARG BASE=docker.io/library/ubuntu:26.04
 #   chrome - vnc + Google Chrome (via the --no-sandbox wrapper)
 #   xfce   - chrome + XFCE desktop
 #   lxqt   - chrome + LXQt desktop
-#   gnome  - chrome + GNOME Flashback desktop
+#   gnome  - chrome + GNOME Flashback desktop + claude-desktop
 #   kde    - chrome + KDE Plasma desktop
 #   mate   - chrome + MATE desktop
 #   cinnamon - chrome + Cinnamon desktop
@@ -291,8 +291,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # select Flashback's gsettings defaults and its applications menu.
 # The panel's "Log Out" needs gnome-session, so it does nothing here: the menu's
 # "Log Out (stop the container)" entry ends the session by closing the panel instead.
+# Keyring: claude-desktop stores its secrets in the default keyring (gnome-keyring,
+# D-Bus activated). A new home has none, so gnome-keyring would ask for a password to
+# create one, and claude-desktop hangs after that dialog. So the session gives a home
+# without a default keyring a passwordless one (a plain-text keyring file): it unlocks
+# without a prompt, and nothing asks for a password the user doesn't have. Secrets in it
+# are not encrypted: they're protected only by the home's file permissions.
 RUN printf '%s\n' '#!/bin/sh' \
         'export XDG_CURRENT_DESKTOP=GNOME-Flashback:GNOME XDG_MENU_PREFIX=gnome-flashback- XDG_SESSION_TYPE=x11' \
+        'd=$HOME/.local/share/keyrings' \
+        'if [ ! -e "$d/default" ]; then (' \
+        '    umask 077; mkdir -p "$d"' \
+        '    [ -e "$d/Default_keyring.keyring" ] || printf "%s\n" "[keyring]" "display-name=Default keyring" \' \
+        '        "ctime=0" "mtime=0" "lock-on-idle=false" "lock-after=false" > "$d/Default_keyring.keyring"' \
+        '    printf Default_keyring > "$d/default"' \
+        ') fi' \
         'metacity &' \
         'gnome-flashback &' \
         'exec gnome-panel' \
@@ -312,6 +325,17 @@ RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-lay
         '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
         > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
     && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+
+# Claude desktop app, from Anthropic's apt repository. The key and the sources file go
+# where the package's own postinst puts them, so it doesn't add a second entry.
+# gnome-keyring: where claude-desktop stores its secrets (see vnc-session above)
+RUN curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+        https://downloads.claude.ai/keys/claude-code.asc \
+    && echo 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
+        > /etc/apt/sources.list.d/claude-desktop.list \
+    && apt-get update && apt-get install -y claude-desktop gnome-keyring \
+    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 USER ${USERID}
 

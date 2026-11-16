@@ -84,7 +84,7 @@ so building one doesn't replace another.
 | `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts (incl. CJK, emoji) | `xterm`        |
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
 | `lxqt`   | LXQt with openbox, `screengrab`                             | LXQt           |
-| `gnome`  | GNOME Flashback (gnome-panel, metacity, nautilus), `gnome-terminal`, `gnome-screenshot` | GNOME Flashback |
+| `gnome`  | GNOME Flashback (gnome-panel, metacity, nautilus), `gnome-terminal`, `gnome-screenshot`, the Claude desktop app (`claude-desktop`) | GNOME Flashback |
 | `kde`    | KDE Plasma 6 (X11 session, `kwin-x11`), Dolphin, Konsole, System Settings, `spectacle` | Plasma |
 | `mate`   | MATE (mate-panel, marco, caja), `mate-terminal`, `scrot`    | MATE           |
 | `cinnamon` | Cinnamon (software-rendering session), Nemo, `gnome-terminal`, `scrot` | Cinnamon |
@@ -95,6 +95,12 @@ can't run as a session on the VNC X server. There is no `gnome-session`
 either, so the user menu's **Log Out** does nothing: to end the session (and
 stop the container) use **Applications → System Tools → Log Out (stop the
 container)**, or `podman stop`. Screen locking is switched off (see `kde`).
+
+`gnome` also has the Claude desktop app (`claude-desktop`, from Anthropic's apt
+repository). It keeps its secrets in the GNOME keyring, so the session gives a
+new home a default keyring without a password: nothing asks for one at the
+app's first start. Secrets in it are not encrypted, only protected by the
+home's file permissions. A home that already has a default keyring keeps it.
 
 `kde` runs Plasma's X11 session (`startplasma-x11`). Locking the screen is
 disabled, both the idle timer and by hand, because the user has no password to

@@ -89,6 +89,23 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   for Log Out. The panel layout is forced to `gnome-flashback` (Ubuntu's
   default wants an indicator applet that isn't installed). gnome-flashback's
   `screensaver` component is off (it locked after 5 idle minutes; no password).
+- **`claude-desktop`** (the Claude desktop app) is in the `gnome` stage only. It
+  comes from Anthropic's apt repository: the Containerfile downloads the signing
+  key (`https://downloads.claude.ai/keys/claude-code.asc`) and writes
+  `claude-desktop.list` to the paths the package's own postinst uses, then
+  `apt-get install` (with recommends, unlike the desktop package lists;
+  `gnome-keyring` is named explicitly because the app needs it). Not the
+  .deb-download pattern used for Chrome: the only known .deb URL is versioned.
+  It stores secrets in
+  the default keyring (gnome-keyring, D-Bus activated). A new home has none, and
+  gnome-keyring's "choose a password" dialog left the app hanging, so `gnome`'s
+  `vnc-session` writes a passwordless plain-text keyring
+  (`~/.local/share/keyrings/Default_keyring.keyring` + `default`) when the home
+  has no `default`: it unlocks without a prompt. `gnome-keyring-daemon --unlock`
+  with an empty password does *not* create a keyring. Secrets are unencrypted
+  on purpose (no user password). To test, start the app with the session's
+  `DBUS_SESSION_BUS_ADDRESS` (from `/proc/$(pgrep -x gnome-panel)/environ`):
+  a plain `podman exec` has no session bus.
 - **`kde`** is Plasma's X11 session (`plasma-session-x11`, `kwin-x11`; works
   without systemd). Screen locking is off by kiosk restriction
   (`/etc/xdg/kdeglobals`, `kscreenlockerrc`): the user has no password, so a
