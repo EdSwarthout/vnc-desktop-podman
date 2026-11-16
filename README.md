@@ -6,13 +6,15 @@ with Google Chrome, Claude Code and nested rootless podman. Smaller stages
 Each instance keeps its home directory on the host, so settings, browser profile
 and the Claude install survive rebuilds.
 
+Why use it: [A full Linux desktop for your AI agent, in a rootless container](docs/Advantages-article.md).
+
 | File            | Purpose                                                       |
 |-----------------|---------------------------------------------------------------|
 | `Containerfile` | Image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon` (see [Stages](#stages)) |
 | `start.sh`      | Container entrypoint: first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
-| `docs/`         | [Screenshots](docs/README.md) of each stage's desktop          |
+| `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
 | `.env`          | Your VNC password and local settings (not in git)             |
 
