@@ -1,8 +1,9 @@
 # vnc-desktop-podman — Desktops over VNC in rootless podman, with Chrome, and nested podman
 
-A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop over VNC/noVNC,
+A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop
+on Ubuntu 26.04, or GNOME on Debian 13 (trixie), over VNC/noVNC,
 with Google Chrome, Claude Code and nested rootless podman. Smaller stages
-(headless, or VNC with just an xterm) are built from the same `Containerfile`.
+(headless, or VNC with just an xterm) are built from the same `Containerfile` (`ubuntu/` or `debian/`).
 Each instance keeps its home directory on the host, so settings, browser profile
 and the Claude install survive rebuilds.
 
@@ -10,9 +11,10 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 | File            | Purpose                                                       |
 |-----------------|---------------------------------------------------------------|
-| `Containerfile` | Image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon` (see [Stages](#stages)) |
-| `start.sh`      | Container entrypoint: first-boot setup, starts the VNC session if the stage has one |
-| `nested-subids` | Fits nested podman's sub-IDs to the container at boot |
+| `ubuntu/Containerfile` | Ubuntu image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon` (see [Stages](#stages)) |
+| `debian/Containerfile` | Debian image stages `base` → `vnc` → `chrome` → `gnome` (see [Debian](#debian)) |
+| `start.sh`      | Container entrypoint (both distros): first-boot setup, starts the VNC session if the stage has one |
+| `nested-subids` | Fits nested podman's sub-IDs to the container at boot (both distros) |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
@@ -34,14 +36,15 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 1. **Choose `d_dir`**, a host directory for container data, and set it in
    `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
-   - `d_home0=$d_dir/u2604cc` — prefix for each instance's home dir
-     (instance 1 → `$d_dir/u2604cc1`).
-   - `d_aptcache=$d_dir/apt-cache/archives` — downloaded `.deb`s, mounted on
+   - `$d_dir/u2604cc` (Ubuntu) and `$d_dir/d13cc` (Debian) — prefixes for
+     each instance's home dir (Ubuntu instance 1 → `$d_dir/u2604cc1`); set
+     `d_homes0[debian]=…` etc. in `.env` to put them elsewhere.
+   - `$d_dir/apt-cache/archives` — downloaded `.deb`s (Ubuntu's; Debian's are in
+     `$d_dir/apt-cache-debian/archives`, set up the same way), mounted on
      `/var/cache/apt/archives` in builds and containers, and meant to be
      shared between machines over NFS so packages are downloaded once. That's
      why it's a mounted directory rather than a podman build cache, which
-     stays local to one machine. Create it: `mkdir -p "$d_aptcache"` (after
-     step 3). On the NFS server, export this `archives` directory, e.g.:
+     stays local to one machine. Create it: `mkdir -p "$d_dir/apt-cache/archives"`. On the NFS server, export this `archives` directory, e.g.:
      ```
      /mnt/hwd23data/sw/docker/apt-cache/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
      ```
@@ -50,7 +53,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
    the first 8 characters) and your `d_dir`. `env.rc` sources it, so it can
    override any of the defaults at the top of `env.rc` (`d_dir`, `d_user`,
-   `d_target`, `d_aptcache`, `d_home0`):
+   `d_distro`, `d_target`, `d_aptcache` (one cache for every distro), `d_homes0`):
    ```bash
    cat > .env <<'EOF'
    export VNC_PASSWORD=yourpass
@@ -67,21 +70,22 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 4. **Pull the base image and build** (from any directory):
    ```bash
    d_0        # podman pull docker.io/library/ubuntu:26.04
-   d_build    # podman build -t u2604cc:$d_target --target $d_target …
+   d_build    # podman build -t u2604cc:$d_target -f ubuntu/Containerfile --target $d_target …
    ```
    `d_target` in `env.rc` picks the stage (default `xfce`); see below. To build
    or run another one without editing `env.rc`: `d_target=lxqt d_build`,
-   `d_target=lxqt d_run`.
+   `d_target=lxqt d_run`. For Debian, see [Debian](#debian).
 
 ## Stages
 
-Each stage builds on the one before; `xfce`, `lxqt`, `gnome`, `kde`, `mate` and `cinnamon` each build on `chrome`.
+These are Ubuntu's stages (`ubuntu/Containerfile`, the default `d_distro`);
+for Debian's see [Debian](#debian). Each stage builds on the one before; `xfce`, `lxqt`, `gnome`, `kde`, `mate` and `cinnamon` each build on `chrome`.
 Every stage is runnable with `d_run`, and the image is tagged `u2604cc:<stage>`,
 so building one doesn't replace another.
 
 | Stage    | Adds                                                        | Session        |
 |----------|-------------------------------------------------------------|----------------|
-| `base`   | Ubuntu, network/debug and development tools (compilers, Python, Node, `gh`, …), editors, nested rootless podman, `install_claude` | none: headless, use `podman exec -it ccN bash` |
+| `base`   | Ubuntu, network/debug and development tools (compilers, Python, Node, `gh`, …), editors, nested rootless podman, `install_claude` | none: headless, use `podman exec -it ccNu bash` |
 | `vnc`    | TigerVNC server/viewer, noVNC                               | `xterm`        |
 | `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts (incl. CJK, emoji) | `xterm`        |
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
@@ -118,17 +122,54 @@ same reason as in `kde`: it would lock the screen with no password to unlock it.
 A home dir works with any stage: the session comes from the image
 (`/usr/local/bin/vnc-session`), not the home.
 
+### Debian
+
+`debian/Containerfile` builds Debian 13 (trixie) the same way, with Debian's
+default desktop only: stages `base`, `vnc` and `chrome` (as in Ubuntu) and
+`gnome`. Its images are tagged `d13cc:<stage>`. Select it with `d_distro`,
+per command or in `.env` (together with a Debian stage as `d_target`, as the
+default, `xfce`, is Ubuntu-only):
+```bash
+d_distro=debian d_0                      # podman pull docker.io/library/debian:trixie
+d_distro=debian d_target=gnome d_build   # d13cc:gnome
+d_select 5
+d_distro=debian d_target=gnome d_run     # cc5d, home $d_dir/d13cc5
+```
+Debian instances have their own names, homes and ports (see [Run an
+instance](#run-an-instance)), so Debian and Ubuntu instance 5 can run side by
+side. Its `.deb`s go to their own cache,
+`$d_dir/apt-cache-debian/archives` (create and NFS-export it like Ubuntu's),
+because both distros have files with the same name but different contents.
+
+Debian's `gnome` is **GNOME Shell**, unlike Ubuntu's: GNOME 48 still has an X11
+session. It starts without systemd, given a stand-in system D-Bus (with no
+services on it, so GNOME logs warnings about logind, polkit, UPower etc.).
+**Power Off → Log Out…** in the top-right menu ends the session and stops the
+container (shown although there's only one user). Screen locking is impossible (no screen
+shield without GDM; locking and idle blanking are also off in the settings).
+The dash has Chrome, Files and Terminal; no Claude desktop app.
+
 ## Run an instance
 
-Instances are numbered. On the host, instance N is named `ccN`, uses home
-`${d_home0}N`, and publishes (nested instances, run inside an instance, are
-named differently; see item 4 of "Inside the container"):
+Instances are numbered 1-49, separately per distro. On the host, instance N
+is named `ccN` plus the first letter of `d_distro`, uses home `<prefix>N`, and
+publishes these ports (nested instances, run inside an instance, are named
+differently; see item 4 of "Inside the container"):
 
-| Instance | Container name | VNC port (host) | noVNC port (host) |
-|----------|----------------|-----------------|-------------------|
-| 1        | `cc1`          | 6901            | 6081              |
-| 2        | `cc2`          | 6902            | 6082              |
-| N        | `ccN`          | 6900+N          | 6080+N            |
+| Distro | Instance | Container name | Home                | VNC port (host) | noVNC port (host) |
+|--------|----------|----------------|---------------------|-----------------|-------------------|
+| ubuntu | 1        | `cc1u`         | `$d_dir/u2604cc1`   | 6901            | 6081              |
+| ubuntu | N        | `ccNu`         | `$d_dir/u2604ccN`   | 6900+N          | 6080+N            |
+| debian | 1        | `cc1d`         | `$d_dir/d13cc1`     | 6951            | 6131              |
+| debian | N        | `ccNd`         | `$d_dir/d13ccN`     | 6950+N          | 6130+N            |
+
+`d_select N` only picks the number: the name, home and ports follow
+`d_distro` at the time of each command, so after `d_select 1`,
+`d_distro=debian d_run` runs `cc1d`.
+
+Instances created before the names had the distro letter are called `ccN`:
+stop or remove such an instance (`podman rm -f ccN`) and `d_run` it again,
+which creates `ccNu` with the same home and ports.
 
 ```bash
 d_select 1     # or d_run_new: the next number with no container and no home dir yet
@@ -153,18 +194,18 @@ Instances use the host's timezone (`--tz=local`); a nested one gets its parent
 instance's.
 
 The container stops if the VNC server or websockify exits — including when you
-**Log Out** of the desktop (or exit the `xterm` in `vnc`/`chrome`; for `gnome` see [Stages](#stages)). `podman start ccN` brings it back; `podman logs ccN` shows
+**Log Out** of the desktop (or exit the `xterm` in `vnc`/`chrome`; for Ubuntu's `gnome` see [Stages](#stages)). `podman start ccNu` brings it back; `podman logs ccNu` shows
 which one exited.
 
 ## Connect to the desktop
 
 - **Browser (noVNC):** `d_novnc` opens the selected instance's page in your
   default browser (`xdg-open`); from another machine it's
-  `http://<host>:6081/vnc.html` for instance 1 (6080+N in general). Then
+  `http://<host>:6081/vnc.html` for Ubuntu instance 1 (see the table above). Then
   enter the VNC password.
 - **VNC client:** `d_vnc` runs `vncviewer` against the selected instance using
   its stored password file. From another machine, point a VNC client at
-  `<host>:6901` (6900+N).
+  `<host>:6901` (Ubuntu instance 1).
 
 > The ports are published on all interfaces and VNC/noVNC traffic is
 > unencrypted. Use this only on a trusted LAN behind a firewall, or change
@@ -207,15 +248,16 @@ which one exited.
    d_target=gnome d_run       # start it with a new home
    d_vnc                      # look at it (or tests/screenshot.sh, item 5)
    ```
-   Inside instance `cc3`, nested instance N is named `cc3_N` and its home is
-   `~/Containers/cc3_N`, a plain directory you can read and copy files into.
+   Inside instance `cc3u`, nested instance N is named `cc3u_N` plus the
+   distro letter (`cc3u_1u`, `cc3u_1d`) and its home is `~/Containers/cc3u_1u`,
+   a plain directory you can read and copy files into.
    It shows that name in its VNC title and shell prompt, though `hostname`
-   still says `cc3`. It uses the same VNC password as this instance. To check
+   still says `cc3u`. It uses the same VNC password as this instance. To check
    that nested podman itself works, run `tests/tests.sh` (ok/FAIL per check).
    Remove a nested instance when you're done:
    ```bash
-   podman rm -f -t 2 cc3_1
-   podman unshare rm -rf ~/Containers/cc3_1    # plain rm can't delete all of it
+   podman rm -f -t 2 cc3u_1u
+   podman unshare rm -rf ~/Containers/cc3u_1u    # plain rm can't delete all of it
    ```
    Nested instances count against this instance's limit on processes and
    threads (`d_pids_limit` in `env.rc`, 16384; `cat /sys/fs/cgroup/pids.max`
@@ -233,9 +275,9 @@ which one exited.
 
 **No root inside.** The image is meant to carry everything needed: `ed` has no
 general `sudo` (the one exception is the boot-time `nested-subids`, which
-`start.sh` runs). To add a package, put it in the `Containerfile` (`base`
+`start.sh` runs). To add a package, put it in the `<distro>/Containerfile` (`base`
 stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
-`podman exec -u root ccN apt-get update` / `… apt-get install -y PKG` (lost
+`podman exec -u root ccNu apt-get update` / `… apt-get install -y PKG` (lost
 when the container is replaced). Per-user tools need no root: `pip` in a
 `python3 -m venv`, `npm install` in a project or with `--prefix ~/.local`,
 and containers in the nested podman.
@@ -247,17 +289,17 @@ In a new shell, `source env.rc` and `d_select N` before using `d_run`/`d_vnc`/`d
 
 ```bash
 podman ps                  # running instances
-podman logs cc1            # entrypoint / VNC / websockify output
-podman stop cc1            # stop
-podman start cc1           # start again (same container)
-podman exec -it cc1 bash   # shell without the desktop
+podman logs cc1u           # entrypoint / VNC / websockify output
+podman stop cc1u           # stop
+podman start cc1u          # start again (same container)
+podman exec -it cc1ubash   # shell without the desktop
 ```
 
-**Change the VNC password:** delete `${d_home0}N/.config/tigervnc/passwd` on
+**Change the VNC password:** delete `<home>/.config/tigervnc/passwd` on
 the host, update `.env`, `source env.rc`, then `d_run` again — or run
 `vncpasswd` inside the container and restart it.
 
-**Try every stage at once:** `d_all N` builds each stage (`base vnc chrome
+**Try every stage at once:** `d_all N` builds each stage of `$d_distro` (Ubuntu: `base vnc chrome
 xfce lxqt gnome kde mate cinnamon`) and runs it on instance N, N+1, …, opening a `d_vnc` viewer in
 the background for each one with a desktop (log in `/tmp/d_all-<name>.log`).
 `d_all 11 xfce lxqt` limits it to those stages. N is required, because
@@ -273,7 +315,7 @@ d_all_cmd= d_all 11                                   # just build and run
 
 **Retake the screenshots in `docs/`:** `d_screenshots N [STAGE...]` builds each
 desktop stage, runs it on a new home as instance N (which must be unused; it is
-removed again afterwards) and saves `docs/<stage>.png`.
+removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 
 **Rebuild after editing the Containerfile:** `d_build`, then `d_select N` and
 `d_run` for each instance. Home dirs are untouched.
