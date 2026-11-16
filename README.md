@@ -190,27 +190,35 @@ which one exited.
 
 4. **Containers inside an instance** (every stage): rootless `podman run`,
    `podman build` etc. work inside the instance. This is a separate podman, not
-   the host's: images and containers are stored in `~/.local/share/containers`
-   in this instance's home dir, it can't see the host's images, `$d_dir` or the
-   NFS apt cache, and published ports are reachable only from inside the
-   instance. Its files are owned by mapped sub-IDs, so to delete that storage
-   from the host use `podman unshare rm -rf <home>/.local/share/containers`.
-   Nested containers share the instance's hostname (`--hostname` won't work;
-   `d_run` leaves it out when `$container` is set, i.e. inside an instance).
-   `env.rc` also works inside an instance: with `$container` set it uses
-   `~/Containers` as `d_dir` (nested instance N of `cc3` is named `cc3_N`,
-   with home `~/Containers/cc3_N`; inside `cc3_1` its children are `cc3_1_N`;
-   the VNC title and shell prompt show that name, though `hostname` says `cc3`) and the instance's apt cache, so `d_build`/`d_run`
-   build and run a nested desktop. Without a `.env` there, the nested desktop
-   gets a copy of this instance's VNC password file. Its ports are published
-   only inside the instance, so connect from there (`d_vnc`, `tigervnc-viewer`).
-   `tests/tests.sh` checks it all (run, published port, build), printing
-   ok/FAIL per check and failing if any did; an instance
-   created before `d_run` added `unmask=/proc/*` needs recreating with `d_run`.
-   Nested containers also get the instance's root group (`ed:0:1` in
-   `/etc/subgid`), so a nested build can use the shared apt cache. That shifts
-   nested group IDs by one, so nested storage created before it needs
-   `podman system reset` once; `start.sh` warns at boot when that applies.
+   the host's: its images and containers live in `~/.local/share/containers`
+   in this instance's home dir, it can't see the host's images, and ports it
+   publishes are reachable only from inside the instance.
+
+   **Testing a change in a nested desktop.** `env.rc` works inside an instance
+   too, so you (or Claude Code running there) can build this image and run it
+   as a desktop inside the desktop, without touching the host's instances:
+   ```bash
+   cd <your clone of this repo>
+   source ./env.rc
+   d_target=gnome d_build     # build the stage you changed (takes minutes)
+   d_run_new                  # pick a free instance number; prints its name
+   d_target=gnome d_run       # start it with a new home
+   d_vnc                      # look at it (or tests/screenshot.sh, item 5)
+   ```
+   Inside instance `cc3`, nested instance N is named `cc3_N` and its home is
+   `~/Containers/cc3_N`, a plain directory you can read and copy files into.
+   It shows that name in its VNC title and shell prompt, though `hostname`
+   still says `cc3`. It uses the same VNC password as this instance. To check
+   that nested podman itself works, run `tests/tests.sh` (ok/FAIL per check).
+   Remove a nested instance when you're done:
+   ```bash
+   podman rm -f -t 2 cc3_1
+   podman unshare rm -rf ~/Containers/cc3_1    # plain rm can't delete all of it
+   ```
+   The same `podman unshare rm -rf` is needed on the host to delete an
+   instance's `.local/share/containers`. If `start.sh` warns at boot about
+   older nested storage, run `podman system reset` once as it says. How the
+   nesting is set up is described in `CLAUDE.md`.
 
 5. **Screenshots** (`xfce`, `lxqt`, `gnome`, `kde`, `mate`, `cinnamon`): `tests/screenshot.sh [FILE.png]` saves a
    full-screen PNG of the desktop and prints its path.

@@ -140,6 +140,12 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   shifted nested gids by one, so older nested storage needs one
   `podman system reset` (`start.sh` warns; marker `~/.local/share/containers/.subgid-root-mapped`).
   `d_run` passes `/dev/fuse`,  `/dev/net/tun` and `unmask=/proc/*` (needed for nested `proc` mounts).
+  An instance created before `d_run` added `unmask=/proc/*` needs recreating with `d_run`.
+  Nested storage is in the instance's `~/.local/share/containers`, owned by mapped
+  sub-IDs (delete it with `podman unshare rm -rf`, also from the host); ports a nested
+  container publishes are reachable only inside the instance, so connect from there
+  (`d_vnc`). `d_run` omits `--hostname` when `$container` is set (it wouldn't work).
+  Without a `.env`, a nested desktop gets a copy of this instance's VNC password file.
   No seccomp or further relaxation: ask before adding any.
 - Instance N → container `ccN`, hostname `ccN`; when `d_run` runs nested
   (`$container` set) it's `<this instance>_N` (e.g. `cc2_1`, then `cc2_1_1`)
