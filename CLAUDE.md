@@ -1,12 +1,12 @@
 # CLAUDE.md — vnc-desktop-podman
 
-Rootless-podman image: Ubuntu 26.04 + XFCE or LXQt over TigerVNC/noVNC, with
+Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt or GNOME Flashback over TigerVNC/noVNC, with
 Chrome, Claude Code and nested podman (plus smaller headless/xterm stages).
 See `README.md` for user-facing setup.
 
 ## Files
 - `Containerfile` — stages `base` (headless + nested rootless podman) →
-  `vnc` (TigerVNC/noVNC, xterm session) → `chrome` → `xfce` / `lxqt`.
+  `vnc` (TigerVNC/noVNC, xterm session) → `chrome` → `xfce` / `lxqt` / `gnome`.
   `d_target` in `env.rc` picks one (default `xfce`); images are tagged
   `u2604cc:<stage>`. Package lists are kept **sorted**.
 - `start.sh` — entrypoint (PID 1's child under `--init`), shared by all stages:
@@ -21,7 +21,7 @@ See `README.md` for user-facing setup.
   `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, with
   `d_vnc` in the background).
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
-   `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` (xfce, lxqt); copy it out
+   `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` (xfce, lxqt, gnome); copy it out
   with `podman cp` and look at it to check a desktop by script.
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.
@@ -70,13 +70,20 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `$d_user` and `id -u`), so keep-id lines up for any host user. Scripts use
   `$USERID` / `$SUDO_USER`, not a literal `ed`.
 - **Session comes from the image**: each stage with a display installs
-  `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt`); the home's
+  `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt` / Flashback's parts); the home's
   `xstartup` only runs it under `dbus-launch`, so a home works with any stage.
 - **LXQt without recommends** needs explicit `breeze-icon-theme`,
   `libxcb-cursor0`, `lxqt-menu-data`, `openbox`, `qt6-svg-plugins` (see the
   `lxqt` stage comment); the default panel drops the `volume` plugin
   (`/etc/xdg/lxqt/panel.conf`; no sound device, so it showed a red X). Check a
   new desktop with `tests/screenshot.sh`.
+- **`gnome` is GNOME Flashback**, not GNOME Shell: Shell 50 is Wayland-only and
+  needs logind (tried with a mock logind + PipeWire + `--devkit`: it only
+  half-started). No `gnome-session` either (needs systemd), so `vnc-session`
+  starts `metacity`, `gnome-flashback` and `gnome-panel` itself and the session
+  lasts as long as the panel; a menu entry (`vnc-logout.desktop`) stands in
+  for Log Out. The panel layout is forced to `gnome-flashback` (Ubuntu's
+  default wants an indicator applet that isn't installed).
 - **Chrome** runs via the `/usr/local/bin/google-chrome-stable` wrapper
   (`--no-sandbox` etc.); `~/.config/chrome-flags.conf` does nothing on Ubuntu.
 - **Ports bind all interfaces** on purpose (trusted LAN). Accepted.
