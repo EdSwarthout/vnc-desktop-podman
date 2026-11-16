@@ -9,6 +9,7 @@ ARG BASE=docker.io/library/ubuntu:26.04
 #   lxqt   - chrome + LXQt desktop
 #   gnome  - chrome + GNOME Flashback desktop
 #   kde    - chrome + KDE Plasma desktop
+#   mate   - chrome + MATE desktop
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -347,5 +348,29 @@ RUN printf '%s\n' '#!/bin/sh' 'export SHELL="${SHELL:-/bin/bash}"' 'exec startpl
         '    }' \
         '}' \
         > $d/vnc-desktop-launchers.js
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "mate": chrome + MATE desktop
+FROM chrome AS mate
+USER root
+
+# scrot: tests/screenshot.sh (MATE's own mate-screenshot can only save through a dialog)
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    mate-desktop-environment-core \
+    mate-terminal \
+    scrot \
+    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Panel layout: Ubuntu's default ("familiar") uses applets that aren't installed (they
+# show as "Error" boxes, and the top panel stays empty); use MATE's own default. Only
+# read when a home's panel is first set up.
+RUN printf '#!/bin/sh\nexec mate-session\n' > /usr/local/bin/vnc-session \
+    && printf '%s\n' '[org.mate.panel]' "default-layout='default'" \
+        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
+    && glib-compile-schemas /usr/share/glib-2.0/schemas
 
 USER ${USERID}
