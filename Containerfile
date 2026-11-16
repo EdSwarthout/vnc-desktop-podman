@@ -54,6 +54,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     gh \
     git \
     gnupg \
+    iperf3 \
     iproute2 \
     iputils-ping \
     jq \
@@ -282,6 +283,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnome-screenshot \
     gnome-session-flashback \
     gnome-terminal \
+    seahorse \
     && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
