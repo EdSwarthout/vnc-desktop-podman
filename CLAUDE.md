@@ -19,10 +19,14 @@ See `README.md` for user-facing setup.
   then `.env` (may override `d_dir`, `d_user`, `d_target`, …), then derived values: `d_0`, `d_build`,
   `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`, `d_logs`,
   `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, with
-  `d_vnc` in the background).
+  `d_vnc` in the background), `d_screenshots N [STAGE...]` (retake
+  `docs/<stage>.png` on a throwaway instance N).
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out
   with `podman cp` and look at it to check a desktop by script.
+- `docs/` — `README.md` gallery with one screenshot per stage of the desktop
+  on a fresh home (`<stage>.png`); retake a stage's picture when its initial
+  look changes (`d_screenshots N <stage>`).
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.
 

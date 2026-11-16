@@ -12,6 +12,7 @@ and the Claude install survive rebuilds.
 | `start.sh`      | Container entrypoint: first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
+| `docs/`         | [Screenshots](docs/README.md) of each stage's desktop          |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
 | `.env`          | Your VNC password and local settings (not in git)             |
 
@@ -102,6 +103,8 @@ unlock it with. It is the largest image, about 0.8 GB more than `chrome`.
 `cinnamon` runs Cinnamon's software-rendering session (`cinnamon2d`), as there
 is no GPU behind the VNC display. Its screensaver is not run at all, for the
 same reason as in `kde`: it would lock the screen with no password to unlock it.
+
+[`docs/`](docs/README.md) has a screenshot of each desktop as it first comes up.
 
 A home dir works with any stage: the session comes from the image
 (`/usr/local/bin/vnc-session`), not the home.
@@ -236,6 +239,10 @@ xfce lxqt gnome kde mate cinnamon`) and runs it on instance N, N+1, …, opening
 the background for each one with a desktop (log in `/tmp/d_vnc-<name>.log`).
 `d_all 11 xfce lxqt` limits it to those stages. N is required, because
 `d_run` replaces whatever instance has that number.
+
+**Retake the screenshots in `docs/`:** `d_screenshots N [STAGE...]` builds each
+desktop stage, runs it on a new home as instance N (which must be unused; it is
+removed again afterwards) and saves `docs/<stage>.png`.
 
 **Rebuild after editing the Containerfile:** `d_build`, then `d_select N` and
 `d_run` for each instance. Home dirs are untouched.
