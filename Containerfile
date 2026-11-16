@@ -10,6 +10,7 @@ ARG BASE=docker.io/library/ubuntu:26.04
 #   gnome  - chrome + GNOME Flashback desktop
 #   kde    - chrome + KDE Plasma desktop
 #   mate   - chrome + MATE desktop
+#   cinnamon - chrome + Cinnamon desktop
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -303,9 +304,14 @@ RUN printf '%s\n' '#!/bin/sh' \
 # Panel layout: Ubuntu's default ("ubuntu") has an indicator applet that isn't
 # installed, which leaves the top panel without clock or user menu; use GNOME
 # Flashback's own layout. Only read when a home's panel is first set up.
+# No screen locking: the user has no password, so a locked screen couldn't be unlocked,
+# and by default it locks after 5 idle minutes. gnome-flashback's screensaver component
+# is the locker, so it's switched off.
 RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-layout='gnome-flashback'" \
+        '[org.gnome.gnome-flashback]' 'screensaver=false' \
+        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
         > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
-    && glib-compile-schemas /usr/share/glib-2.0/schemas
+    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
 
 USER ${USERID}
 
@@ -372,5 +378,41 @@ RUN printf '#!/bin/sh\nexec mate-session\n' > /usr/local/bin/vnc-session \
     && printf '%s\n' '[org.mate.panel]' "default-layout='default'" \
         > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
     && glib-compile-schemas /usr/share/glib-2.0/schemas
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "cinnamon": chrome + Cinnamon desktop
+FROM chrome AS cinnamon
+USER root
+
+# scrot: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cinnamon-core \
+    gnome-terminal \
+    scrot \
+    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# cinnamon2d: Cinnamon's software-rendering session (there's no GPU behind the VNC X
+# server).
+# No screen locking: the user has no password, so a locked screen couldn't be unlocked.
+# The settings turn off idle activation and hide the menu's Lock Screen, but an explicit
+# lock request still locks, so the screensaver isn't run at all: it's taken out of the
+# session's components and its D-Bus activation file is removed (the greps fail the
+# build if a new Cinnamon moves these).
+RUN printf '#!/bin/sh\nexec cinnamon-session-cinnamon2d\n' > /usr/local/bin/vnc-session \
+    && f=/usr/share/cinnamon-session/sessions/cinnamon2d.session \
+    && grep -q '^RequiredComponents=.*;org.cinnamon.ScreenSaver;' $f \
+    && sed -i '/^RequiredComponents=/s/;org.cinnamon.ScreenSaver;/;/' $f \
+    && grep -q '^Exec=/usr/bin/cinnamon-screensaver$' /usr/share/dbus-1/services/org.cinnamon.ScreenSaver.service \
+    && rm /usr/share/dbus-1/services/org.cinnamon.ScreenSaver.service \
+    && printf '%s\n' \
+        '[org.cinnamon.desktop.lockdown]' 'disable-lock-screen=true' \
+        '[org.cinnamon.desktop.screensaver]' 'lock-enabled=false' \
+        '[org.cinnamon.desktop.session]' 'idle-delay=uint32 0' \
+        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
+    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
 
 USER ${USERID}
