@@ -1,6 +1,6 @@
 # vnc-desktop-podman — Desktops over VNC in rootless podman, with Chrome, and nested podman
 
-A rootless-podman container that runs an XFCE, LXQt or GNOME Flashback desktop over VNC/noVNC,
+A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback or KDE Plasma desktop over VNC/noVNC,
 with Google Chrome, Claude Code and nested rootless podman. Smaller stages
 (headless, or VNC with just an xterm) are built from the same `Containerfile`.
 Each instance keeps its home directory on the host, so settings, browser profile
@@ -8,7 +8,7 @@ and the Claude install survive rebuilds.
 
 | File            | Purpose                                                       |
 |-----------------|---------------------------------------------------------------|
-| `Containerfile` | Image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` (see [Stages](#stages)) |
+| `Containerfile` | Image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` (see [Stages](#stages)) |
 | `start.sh`      | Container entrypoint: first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
@@ -72,7 +72,7 @@ and the Claude install survive rebuilds.
 
 ## Stages
 
-Each stage builds on the one before; `xfce`, `lxqt` and `gnome` each build on `chrome`.
+Each stage builds on the one before; `xfce`, `lxqt`, `gnome` and `kde` each build on `chrome`.
 Every stage is runnable with `d_run`, and the image is tagged `u2604cc:<stage>`,
 so building one doesn't replace another.
 
@@ -84,6 +84,7 @@ so building one doesn't replace another.
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
 | `lxqt`   | LXQt with openbox, `screengrab`                             | LXQt           |
 | `gnome`  | GNOME Flashback (gnome-panel, metacity, nautilus), `gnome-terminal`, `gnome-screenshot` | GNOME Flashback |
+| `kde`    | KDE Plasma 6 (X11 session, `kwin-x11`), Dolphin, Konsole, System Settings, `spectacle` | Plasma |
 
 `gnome` is GNOME Flashback, GNOME's classic X11 desktop, not GNOME Shell: the
 GNOME Shell in Ubuntu 26.04 is Wayland-only and needs systemd-logind, so it
@@ -91,6 +92,10 @@ can't run as a session on the VNC X server. There is no `gnome-session`
 either, so the user menu's **Log Out** does nothing: to end the session (and
 stop the container) use **Applications → System Tools → Log Out (stop the
 container)**, or `podman stop`.
+
+`kde` runs Plasma's X11 session (`startplasma-x11`). Locking the screen is
+disabled, both the idle timer and by hand, because the user has no password to
+unlock it with. It is the largest image, about 0.8 GB more than `chrome`.
 
 A home dir works with any stage: the session comes from the image
 (`/usr/local/bin/vnc-session`), not the home.
@@ -191,7 +196,7 @@ which one exited.
    nested group IDs by one, so nested storage created before it needs
    `podman system reset` once; `start.sh` warns at boot when that applies.
 
-5. **Screenshots** (`xfce`, `lxqt`, `gnome`): `tests/screenshot.sh [FILE.png]` saves a
+5. **Screenshots** (`xfce`, `lxqt`, `gnome`, `kde`): `tests/screenshot.sh [FILE.png]` saves a
    full-screen PNG of the desktop and prints its path.
 
 **No root inside.** The image is meant to carry everything needed: `ed` has no
@@ -221,7 +226,7 @@ the host, update `.env`, `source env.rc`, then `d_run` again — or run
 `vncpasswd` inside the container and restart it.
 
 **Try every stage at once:** `d_all N` builds each stage (`base vnc chrome
-xfce lxqt gnome`) and runs it on instance N, N+1, …, opening a `d_vnc` viewer in
+xfce lxqt gnome kde`) and runs it on instance N, N+1, …, opening a `d_vnc` viewer in
 the background for each one with a desktop (log in `/tmp/d_vnc-<name>.log`).
 `d_all 11 xfce lxqt` limits it to those stages. N is required, because
 `d_run` replaces whatever instance has that number.

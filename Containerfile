@@ -8,6 +8,7 @@ ARG BASE=docker.io/library/ubuntu:26.04
 #   xfce   - chrome + XFCE desktop
 #   lxqt   - chrome + LXQt desktop
 #   gnome  - chrome + GNOME Flashback desktop
+#   kde    - chrome + KDE Plasma desktop
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -304,5 +305,47 @@ RUN printf '%s\n' '#!/bin/sh' \
 RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-layout='gnome-flashback'" \
         > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
     && glib-compile-schemas /usr/share/glib-2.0/schemas
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "kde": chrome + KDE Plasma desktop (X11 session)
+FROM chrome AS kde
+USER root
+
+# plasma-session-x11 + kwin-x11: Plasma's X11 session (the default one is Wayland).
+# kde-spectacle: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dolphin \
+    kde-spectacle \
+    konsole \
+    kwin-x11 \
+    plasma-desktop \
+    plasma-session-x11 \
+    systemsettings \
+    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# SHELL: nothing sets it in the container (no login), and Konsole warns without it.
+# No screen locking, automatic or by hand (kiosk restriction): the user has no password,
+# so a locked screen couldn't be unlocked.
+# The update script (run once per home by plasmashell) sets the task bar's pinned
+# launchers: the default ones include Discover, which isn't installed (a blank icon).
+RUN printf '%s\n' '#!/bin/sh' 'export SHELL="${SHELL:-/bin/bash}"' 'exec startplasma-x11' \
+        > /usr/local/bin/vnc-session \
+    && printf '%s\n' '[Daemon]' 'Autolock=false' 'LockOnResume=false' > /etc/xdg/kscreenlockerrc \
+    && printf '%s\n' '[KDE Action Restrictions][$i]' 'action/lock_screen=false' > /etc/xdg/kdeglobals \
+    && d=/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates && test -d $d \
+    && printf '%s\n' \
+        'for (const panel of panels()) {' \
+        '    for (const id of panel.widgetIds) {' \
+        '        const w = panel.widgetById(id);' \
+        '        if (w.type !== "org.kde.plasma.icontasks") continue;' \
+        '        w.currentConfigGroup = ["General"];' \
+        '        w.writeConfig("launchers", ["applications:systemsettings.desktop", "preferred://filemanager", "preferred://browser", "applications:org.kde.konsole.desktop"]);' \
+        '    }' \
+        '}' \
+        > $d/vnc-desktop-launchers.js
 
 USER ${USERID}

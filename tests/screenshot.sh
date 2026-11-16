@@ -2,8 +2,8 @@
 # screenshot.sh [FILE.png]: full-screen PNG of the VNC display ($DISPLAY, :1), taken
 # inside an instance with the desktop stage's own tool; prints the file's path.
 # xfce: xfce4-screenshooter. lxqt: screengrab (it picks the folder and name itself, so
-# the newest PNG it wrote is moved to FILE). gnome: gnome-screenshot. Other stages have
-# no tool: exit 2.
+# the newest PNG it wrote is moved to FILE). gnome: gnome-screenshot. kde: spectacle.
+# Other stages have no tool: exit 2.
 set -euo pipefail
 export DISPLAY=${DISPLAY:-:1}
 out=${1:-/tmp/screenshot-$(date +%Y%m%d-%H%M%S).png}
@@ -20,8 +20,10 @@ elif command -v screengrab >/dev/null; then
     [ "$shot" = "$out" ] || mv "$shot" "$out"
 elif command -v gnome-screenshot >/dev/null; then
     gnome-screenshot -f "$out"
+elif command -v spectacle >/dev/null; then
+    spectacle -b -n -f -o "$out"
 else
-    echo "screenshot.sh: no xfce4-screenshooter, screengrab or gnome-screenshot in this stage" >&2
+    echo "screenshot.sh: no xfce4-screenshooter, screengrab, gnome-screenshot or spectacle in this stage" >&2
     exit 2
 fi
 [ -s "$out" ] || { echo "screenshot.sh: $out is missing or empty" >&2; exit 1; }
