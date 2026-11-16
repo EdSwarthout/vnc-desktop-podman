@@ -80,7 +80,7 @@ so building one doesn't replace another.
 |----------|-------------------------------------------------------------|----------------|
 | `base`   | Ubuntu, network/debug and development tools (compilers, Python, Node, `gh`, …), editors, nested rootless podman, `install_claude` | none: headless, use `podman exec -it ccN bash` |
 | `vnc`    | TigerVNC server/viewer, noVNC                               | `xterm`        |
-| `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts              | `xterm`        |
+| `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts (incl. CJK, emoji) | `xterm`        |
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
 | `lxqt`   | LXQt with openbox, `screengrab`                             | LXQt           |
 

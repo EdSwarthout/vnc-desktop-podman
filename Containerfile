@@ -172,9 +172,12 @@ EXPOSE 5901 6080
 FROM vnc AS chrome
 USER root
 
+# Fonts for web pages: metric-compatible Latin, CJK (else Chinese/Japanese/Korean text
+# shows as empty boxes), emoji
 # keep list sorted
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
+    fonts-noto-cjk \
     fonts-noto-color-emoji \
     && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
