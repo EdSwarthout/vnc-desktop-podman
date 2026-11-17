@@ -1,0 +1,331 @@
+ARG BASE=docker.io/archlinux:latest
+
+# Arch Linux (rolling). https://archlinux.org/
+# Same layering as ../debian/Containerfile, whose base and vnc stages this follows (keep
+# them in step); no chrome stage (Google Chrome is AUR-only), and the desktop is Openbox.
+# Build with d_distro=archlinux; the context is the repo root (the shared start.sh,
+# nested-subids).
+# Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
+# archcc:<stage>):
+#   base    - Arch + network/debug tools + nested rootless podman; headless
+#   vnc     - base + TigerVNC/noVNC, session is a bare xterm
+#   openbox - vnc + Openbox window manager
+# Each stage with a display installs /usr/local/bin/vnc-session, which the home's
+# ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
+
+# ---------------------------------------------------------------------------------------
+# Stage "base": minimal image with nested rootless podman, network and debug tools
+FROM ${BASE} AS base
+
+# The container user. d_build passes d_user and the builder's UID, so that with
+# PODMAN_USERNS=keep-id it is the host user and owns the home volume.
+ARG USERID=ed
+ARG USER_UID=1001
+
+ENV LANG=C.UTF-8 \
+    USERID=${USERID}
+
+# Keep downloaded packages: pacman keeps them in /var/cache/apt-archlinux (CacheDir),
+# where d_build mounts the shared (NFS) archlinux package cache: env.rc's per-distro
+# "apt cache", hence the name, though it holds pacman's .pkg.tar.zst here. d_run mounts
+# every distro's cache (/var/cache/apt-ubuntu, /var/cache/apt-debian, …), so a build
+# nested in an instance uses the right one whichever distro it is. Each pacman RUN ends
+# with `mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*`,
+# so a plain `podman build` without the mount doesn't leave packages in the image
+# layers, and removes the sync databases (like apt's lists). Always -Syu, never -Sy:
+# Arch doesn't support partial upgrades.
+# No DownloadUser: pacman would download as user alpm into a directory it chowns to it,
+# which a shared cache (NFS with all_squash; a bind mount in a nested build) can't do.
+# The greps fail the build if the base image's pacman.conf no longer has those lines.
+RUN grep -q '^DownloadUser' /etc/pacman.conf && grep -q '^#CacheDir' /etc/pacman.conf \
+    && sed -i -e 's/^DownloadUser/#&/' \
+              -e 's|^#CacheDir.*|CacheDir = /var/cache/apt-archlinux/|' /etc/pacman.conf \
+    && grep -q '^CacheDir = /var/cache/apt-archlinux/$' /etc/pacman.conf
+
+# Basics, network/debug and development tools, and nested rootless podman. The user
+# has no root in the container (below), so what's needed at runtime has to be here.
+# base-devel: gcc, make, patch, file, sudo, …; inetutils: hostname (start.sh);
+# bind: dig, nslookup; python has venv built in.
+# keep list sorted
+RUN pacman -Syu --noconfirm --needed \
+    base-devel \
+    bc \
+    bind \
+    bzip2 \
+    ca-certificates \
+    catatonit \
+    curl \
+    emacs-nox \
+    fuse-overlayfs \
+    git \
+    github-cli \
+    gnupg \
+    inetutils \
+    iperf3 \
+    iproute2 \
+    iputils \
+    jq \
+    less \
+    libcap \
+    lsof \
+    nano \
+    nodejs \
+    npm \
+    openbsd-netcat \
+    openssh \
+    passt \
+    podman \
+    procps-ng \
+    python-pip \
+    ripgrep \
+    rsync \
+    shellcheck \
+    strace \
+    tmux \
+    tree \
+    unzip \
+    wget \
+    xz \
+    zip \
+    && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
+    && rm -rf /var/lib/pacman/sync/*
+
+# Non-root user with a fixed UID; a user the base image ships with that UID makes way
+# (Arch's has none; kept in step with Debian's). No general root: the only thing it
+# may sudo is the boot-time nested-subids (root-owned, and "" = without arguments),
+# which start.sh runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
+RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
+    && { [ -z "$old" ] || userdel -r "$old"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
+    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
+    && chmod 440 /etc/sudoers.d/${USERID} \
+    && visudo -cf /etc/sudoers.d/${USERID}
+
+# Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
+# useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
+# (skip the user's own; for ed, 1001: 1-1000 and 1002-65535): inner containers get root->ed plus 65534 subids. subgid also gets
+# group 0 (ed:0:1), so root in a nested build can use a shared package cache (see
+# nested-subids). These are defaults: at every boot start.sh runs nested-subids, which
+# rewrites them from the container's actual ID map (needed one level deeper, e.g.
+# ccN_M) and re-applies the file caps below.
+RUN printf '%s:1:%d\n%s:%d:%d\n' ${USERID} $((USER_UID - 1)) ${USERID} $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
+    && { cat /etc/subuid; printf '%s:0:1\n' ${USERID}; } > /etc/subgid
+
+# setuid-root newuidmap runs with euid 0, which is not the owner of the new user
+# namespace, so writing uid_map needs CAP_SYS_ADMIN, which the outer container lacks
+# (EPERM). With file caps instead, euid stays ed (the owner); it only adds SETUID/SETGID.
+# (Arch's shadow package uses file caps already, but they don't survive into the base
+# image; the chmod is a no-op unless that changes.)
+RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap \
+    && setcap cap_setuid=ep /usr/bin/newuidmap \
+    && setcap cap_setgid=ep /usr/bin/newgidmap
+
+# ping: Arch's has no file caps: it relies on net.ipv4.ping_group_range for unprivileged
+# ICMP sockets, which systemd opens up but is "0 0" in the container. With the cap it
+# works when the instance has NET_RAW (d_run_opts --cap-add=NET_RAW) in its bounding set.
+RUN setcap cap_net_raw=ep /usr/bin/ping
+
+# pasta (nested podman's network): Arch ships /usr/bin/pasta{,.avx2} as symlinks to
+# passt{,.avx2}. A host with AppArmor profiles for both (Ubuntu) attaches them by the
+# resolved path, also inside containers, so pasta would run under the passt profile,
+# which doesn't let it open the network namespace ("Couldn't open network namespace …:
+# Permission denied"). Hard links, as Debian has, keep the path /usr/bin/pasta.
+RUN ln -f /usr/bin/passt /usr/bin/pasta \
+    && ln -f /usr/bin/passt.avx2 /usr/bin/pasta.avx2
+
+# No systemd/logind in the container: no cgroup delegation, no journald.
+# utsns = "host": the outer seccomp profile blocks sethostname without CAP_SYS_ADMIN,
+# so nested containers share the instance's hostname instead of setting their own.
+# TMPDIR=/tmp (not in Debian's): Arch's podman 6 mounts an overlay over the build
+# context with its upper directory in $TMPDIR, by default /var/tmp, which is on the
+# instance's root filesystem, itself an overlay, and that can't hold one: `podman build`
+# fails with "mounting an overlay over build context directory … invalid argument".
+# /tmp is a tmpfs (d_run's --tmpfs=/tmp), which can.
+RUN mkdir -p /etc/containers/containers.conf.d && printf '%s\n' \
+        '[containers]' \
+        'cgroups = "disabled"' \
+        'utsns = "host"' \
+        '' \
+        '[engine]' \
+        'cgroup_manager = "cgroupfs"' \
+        'events_logger = "file"' \
+        'env = ["TMPDIR=/tmp"]' \
+        > /etc/containers/containers.conf.d/nested.conf
+
+COPY --chmod=755 nested-subids /usr/local/sbin/nested-subids
+
+# Claude Code: run install_claude as the user at runtime. The native installer puts it in
+# ~/.local/bin (home volume), so it persists and self-updates.
+RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://claude.ai/install.sh | bash\n' \
+    > /usr/local/bin/install_claude \
+    && chmod +x /usr/local/bin/install_claude
+
+# start.sh: first-boot home setup and nested-subids; then the VNC session if the stage
+# has one, otherwise it just waits (use `podman exec -it <name> bash`).
+COPY --chmod=755 start.sh /usr/local/bin/start.sh
+
+# Files for the home: archlinux/user_files/ (gitignored, may be absent) is packed into
+# /usr/local/share/user_files.tar, which start.sh unpacks into a new home on its first
+# boot, over /etc/skel's copies. Changing them rebuilds every later stage. LICENSE
+# is only there because COPY fails when no source exists (a top-level user_files/LICENSE
+# would be dropped). The files are in the image: no secrets, if the image is shared.
+COPY LICENSE archlinux/user_file[s] /tmp/user_files/
+RUN rm /tmp/user_files/LICENSE \
+    && if [ -n "$(ls -A /tmp/user_files)" ]; then \
+           find /tmp/user_files -mindepth 1 -maxdepth 1 -printf '%P\0' \
+           | tar -C /tmp/user_files --null -T - --owner=0 --group=0 -cf /usr/local/share/user_files.tar; \
+       fi \
+    && rm -rf /tmp/user_files
+
+USER ${USERID}
+WORKDIR /home/${USERID}
+CMD ["/usr/local/bin/start.sh"]
+
+# ---------------------------------------------------------------------------------------
+# Stage "vnc": TigerVNC server/viewer and noVNC, no desktop: the session is an xterm
+FROM base AS vnc
+USER root
+
+ENV DISPLAY=:1 \
+    VNC_RESOLUTION=1440x900
+
+# dbus (in base already) has dbus-launch: xstartup runs the session under it
+# tigervnc: Xvnc, vncpasswd and vncviewer in one package
+# ttf-dejavu, xorg-fonts-misc: a TrueType default, and the "fixed" bitmap font xterm
+# wants; xorg-mkfontscale's pacman hook writes the fonts.dir the X server finds it by
+# xdotool: keys, clicks and window queries for tests (env.rc's d_test, tests/lock.sh)
+# keep list sorted
+RUN pacman -Syu --noconfirm --needed \
+    tigervnc \
+    ttf-dejavu \
+    xdotool \
+    xorg-fonts-misc \
+    xorg-mkfontscale \
+    xorg-xauth \
+    xterm \
+    && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
+    && rm -rf /var/lib/pacman/sync/*
+
+# noVNC and websockify aren't in Arch's repos (AUR only): websockify from PyPI in a venv
+# of its own (the system Python is externally managed), noVNC's release tarball where
+# Debian has it and start.sh expects it, /usr/share/novnc.
+ARG NOVNC_VERSION=1.7.0
+ARG WEBSOCKIFY_VERSION=0.13.0
+RUN python -m venv /opt/websockify \
+    && /opt/websockify/bin/pip install --no-cache-dir websockify==${WEBSOCKIFY_VERSION} \
+    && ln -s /opt/websockify/bin/websockify /usr/local/bin/websockify \
+    && mkdir -p /usr/share/novnc \
+    && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz \
+       | tar -xz -C /usr/share/novnc --strip-components=1 \
+    && test -f /usr/share/novnc/vnc.html
+
+# vncserver: Arch's /usr/bin/vncserver takes only a display and starts the session of
+# /etc/tigervnc + Xsession (meant for the systemd unit), whereas start.sh calls it the
+# way Debian's wrapper works: `vncserver :1 -fg -localhost no <Xvnc options>`, session
+# from ~/.config/tigervnc/xstartup, exits when the session ends. This one, ahead of
+# /usr/bin on PATH, does that with Xvnc directly.
+COPY --chmod=755 <<'EOF' /usr/local/bin/vncserver
+#!/bin/bash
+# vncserver :N [-fg] [-localhost yes|no] [Xvnc options]: Debian-style front end to Xvnc.
+# Always in the foreground: runs Xvnc and ~/.config/tigervnc/xstartup, and exits (with
+# the status of whichever ended first) when either does or on SIGTERM/SIGINT.
+set -u
+case ${1:-} in
+    :[0-9]*) disp=$1; shift ;;
+    *) echo "usage: vncserver :N [-fg] [-localhost yes|no] [Xvnc options]" >&2; exit 2 ;;
+esac
+args=()
+while [ $# -gt 0 ]; do
+    case $1 in
+        -fg) ;;
+        -localhost)
+            case ${2:-} in
+                no|0) args+=(-localhost=0); shift ;;
+                yes|1) args+=(-localhost=1); shift ;;
+                *) args+=(-localhost=1) ;;
+            esac ;;
+        *) args+=("$1") ;;
+    esac
+    shift
+done
+n=${disp#:}
+vncdir=~/.config/tigervnc
+
+# /tmp may be an empty tmpfs; a lock left by `podman restart` would block the display
+mkdir -p -m 1777 /tmp/.X11-unix
+rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n"
+
+trap 'kill $(jobs -p) 2>/dev/null' TERM INT
+Xvnc "$disp" -rfbport $((5900 + n)) -rfbauth "$vncdir/passwd" -nolisten tcp "${args[@]}" &
+xvnc=$!
+until [ -S "/tmp/.X11-unix/X$n" ]; do
+    kill -0 "$xvnc" 2>/dev/null || { echo "vncserver: Xvnc failed to start" >&2; exit 1; }
+    sleep 0.1
+done
+DISPLAY=$disp "$vncdir/xstartup" &
+
+rc=0
+wait -n || rc=$?
+kill $(jobs -p) 2>/dev/null
+wait
+exit "$rc"
+EOF
+
+# The session: closing it (exit the xterm, or log out of a desktop) stops the container.
+# Its own dbus-launch: xstartup's `dbus-launch --exit-with-session` gives no usable bus
+# here. Arch builds dbus-launch without X11, so all it can watch is its stdin, which is
+# /dev/null: it sees EOF and kills the bus it just started. So each vnc-session starts
+# a session bus itself (the daemon stays until the container stops, which the end of
+# the session brings about). Not dbus-run-session: the session process must be what
+# vnc-session execs, with the bus address in its environment (env.rc's d_exec -s).
+RUN printf '%s\n' '#!/bin/sh' 'eval "$(dbus-launch --sh-syntax)"' 'exec xterm' > /usr/local/bin/vnc-session \
+    && chmod +x /usr/local/bin/vnc-session
+
+USER ${USERID}
+EXPOSE 5901 6080
+
+# ---------------------------------------------------------------------------------------
+# Stage "openbox": vnc + Openbox, a bare window manager: no panel, no desktop icons
+FROM vnc AS openbox
+USER root
+
+# python-pyxdg: for openbox-xdg-autostart (XDG autostart entries)
+# scrot: tests/screenshot.sh
+# keep list sorted
+RUN pacman -Syu --noconfirm --needed \
+    openbox \
+    python-pyxdg \
+    scrot \
+    && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
+    && rm -rf /var/lib/pacman/sync/*
+
+# Root menu (right-click the background): the packaged one starts x-terminal-emulator
+# and x-www-browser, which are Debian's alternatives and don't exist here. Exit ends the
+# session, which stops the container. A ~/.config/openbox/menu.xml overrides it.
+COPY <<'EOF' /etc/xdg/openbox/menu.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Openbox 3">
+    <item label="Terminal">
+      <action name="Execute"><command>xterm</command></action>
+    </item>
+    <separator />
+    <menu id="client-list-menu" />
+    <separator />
+    <item label="Reconfigure">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Exit">
+      <action name="Exit"><prompt>yes</prompt></action>
+    </item>
+  </menu>
+</openbox_menu>
+EOF
+
+# openbox-session runs the autostart, then Openbox; it ends when Openbox exits. The
+# xterm is there so that a new session isn't just an empty grey screen.
+RUN printf '%s\n' 'xterm &' >> /etc/xdg/openbox/autostart \
+    && printf '%s\n' '#!/bin/sh' 'eval "$(dbus-launch --sh-syntax)"' \
+        'export XDG_CURRENT_DESKTOP=openbox' 'exec openbox-session' > /usr/local/bin/vnc-session
+
+USER ${USERID}

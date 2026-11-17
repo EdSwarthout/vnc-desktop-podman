@@ -1,9 +1,9 @@
 # vnc-desktop-podman — Desktops over VNC in rootless podman, with Chrome, and nested podman
 
 A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop
-on Ubuntu 26.04, or GNOME on Debian 13 (trixie), over VNC/noVNC,
-with Google Chrome, Claude Code and nested rootless podman. Smaller stages
-(headless, or VNC with just an xterm) are built from the same `Containerfile` (`ubuntu/` or `debian/`).
+on Ubuntu 26.04, GNOME on Debian 13 (trixie), or Openbox on Arch Linux, over VNC/noVNC,
+with Google Chrome (not on Arch), Claude Code and nested rootless podman. Smaller stages
+(headless, or VNC with just an xterm) are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
 Each instance keeps its home directory on the host, so settings, browser profile
 and the Claude install survive rebuilds.
 
@@ -13,8 +13,9 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 |-----------------|---------------------------------------------------------------|
 | `ubuntu/Containerfile` | Ubuntu image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon` (see [Stages](#stages)) |
 | `debian/Containerfile` | Debian image stages `base` → `vnc` → `chrome` → `gnome` (see [Debian](#debian)) |
-| `start.sh`      | Container entrypoint (both distros): first-boot setup, starts the VNC session if the stage has one |
-| `nested-subids` | Fits nested podman's sub-IDs to the container at boot (both distros) |
+| `archlinux/Containerfile` | Arch Linux image stages `base` → `vnc` → `openbox` (see [Arch Linux](#arch-linux)) |
+| `start.sh`      | Container entrypoint (all distros): first-boot setup, starts the VNC session if the stage has one |
+| `nested-subids` | Fits nested podman's sub-IDs to the container at boot (all distros) |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
@@ -38,7 +39,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 1. **Choose `d_dir`**, a host directory for container data, and set it in
    `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
-   - `$d_dir/u2604cc` (Ubuntu) and `$d_dir/d13cc` (Debian) — prefixes for
+   - `$d_dir/u2604cc` (Ubuntu), `$d_dir/d13cc` (Debian) and `$d_dir/archcc` (Arch Linux) — prefixes for
      each instance's home dir (Ubuntu instance 1 → `$d_dir/u2604cc1`); set
      `d_homes0[debian]=…` etc. in `.env` to put them elsewhere.
    - `$d_dir/apt-cache-ubuntu/archives` and `$d_dir/apt-cache-debian/archives` — downloaded `.deb`s, one cache per distro, meant to be shared
@@ -49,7 +50,9 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
      `d_run` mounts both, on `/var/cache/apt-ubuntu` and
      `/var/cache/apt-debian`, so a build inside an instance uses the right one
      for either distro (a missing one is skipped with a note). Create them:
-     `mkdir -p "$d_dir"/apt-cache-{ubuntu,debian}/archives`. On the NFS server,
+     `mkdir -p "$d_dir"/apt-cache-{ubuntu,debian}/archives` (and
+     `apt-cache-archlinux/archives` for Arch Linux: same scheme and names, though
+     it holds pacman's packages; see [Arch Linux](#arch-linux)). On the NFS server,
      export these `archives` directories, e.g.:
      ```
      /mnt/hwd23data/sw/docker/apt-cache-ubuntu/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
@@ -82,7 +85,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
    ```
    `d_target` in `env.rc` picks the stage (default `xfce`); see below. To build
    or run another one without editing `env.rc`: `d_target=lxqt d_build`,
-   `d_target=lxqt d_run`. For Debian, see [Debian](#debian).
+   `d_target=lxqt d_run`. For Debian, see [Debian](#debian); for Arch Linux, [Arch Linux](#arch-linux).
 
 ## Stages
 
@@ -157,6 +160,40 @@ container (shown although there's only one user). Screen locking is impossible (
 shield without GDM; locking and idle blanking are also off in the settings).
 The dash has Chrome, Files and Terminal; no Claude desktop app.
 
+### Arch Linux
+
+`archlinux/Containerfile` builds Arch Linux (rolling) the same way: stages
+`base` and `vnc` (as in Ubuntu and Debian) and `openbox`, a bare window manager.
+There is no `chrome` stage: Google Chrome isn't in Arch's repositories. Images
+are tagged `archcc:<stage>`:
+```bash
+mkdir -p "$d_dir"/apt-cache-archlinux/archives   # once: d_build needs it
+d_distro=archlinux d_0                        # podman pull docker.io/library/archlinux:latest
+d_distro=archlinux d_target=openbox d_build   # archcc:openbox
+d_select 5
+d_distro=archlinux d_target=openbox d_run     # cc5a, home $d_dir/archcc5
+```
+Its package cache, `$d_dir/apt-cache-archlinux/archives`, works like the apt
+caches and is named like them, but holds pacman's packages (the image's pacman
+has `CacheDir = /var/cache/apt-archlinux/`). An instance created before this
+cache directory existed doesn't have it mounted, so `d_build` for Arch inside
+it fails until the instance is recreated with `d_run` (or
+`d_aptcaches[archlinux]=…` points somewhere else).
+
+`openbox` starts with one xterm on an empty background. Right-click the
+background for the menu: **Terminal**, the window list, and **Exit**, which
+ends the session and stops the container. There is no panel and no screen
+locker. A `~/.config/openbox/menu.xml` of your own replaces the image's menu;
+a `~/.config/openbox/autostart` runs in addition to the image's.
+
+Differences from the Debian-based images, all handled in the image: Arch's
+`vncserver` only works with systemd, so `/usr/local/bin/vncserver` stands in
+for Debian's wrapper; noVNC and websockify aren't packaged, so they come from
+noVNC's release tarball and PyPI (`NOVNC_VERSION`, `WEBSOCKIFY_VERSION` build
+args); `pasta` is a hard link instead of Arch's symlink, as a host with
+AppArmor profiles for passt and pasta (Ubuntu) otherwise confines it with the
+wrong one and nested containers get no network.
+
 ## Run an instance
 
 Instances are numbered 1-49, separately per distro. On the host, instance N
@@ -170,6 +207,8 @@ differently; see item 4 of "Inside the container"):
 | ubuntu | N        | `ccNu`         | `$d_dir/u2604ccN`   | 6900+N          | 6080+N            |
 | debian | 1        | `cc1d`         | `$d_dir/d13cc1`     | 6951            | 6131              |
 | debian | N        | `ccNd`         | `$d_dir/d13ccN`     | 6950+N          | 6130+N            |
+| archlinux | 1     | `cc1a`         | `$d_dir/archcc1`    | 7051            | 6231              |
+| archlinux | N     | `ccNa`         | `$d_dir/archccN`    | 7050+N          | 6230+N            |
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` at the time of each command, so after `d_select 1`,
@@ -198,8 +237,8 @@ kept).
 `d_run` uses `--replace`, so running it again restarts the instance from the
 current image; the home dir is kept.
 
-**Your own files in new homes:** put them in `ubuntu/user_files/` or
-`debian/user_files/` (gitignored), laid out as in the home, e.g. `.bashrc`,
+**Your own files in new homes:** put them in `ubuntu/user_files/`,
+`debian/user_files/` or `archlinux/user_files/` (gitignored), laid out as in the home, e.g. `.bashrc`,
 `.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
 image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
 and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
@@ -340,13 +379,14 @@ removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 removed again afterwards, unless `d_test_keep=1`) and prints `ok`/`FAIL` per check:
 the instance comes up, nested podman works (`tests/tests.sh`), no `VNC_PASSWORD` in
 `podman inspect` or any process, no `sudo`, the apt cache mounts, noVNC answers on
-IPv4 and IPv6, Chrome renders a page, a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
+IPv4 and IPv6, Chrome renders a page (stages that have Chrome), a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
 every lock request it knows, then checks that typing still reaches a window),
 ending the session stops the container and `podman start` brings it back. Build
 logs, check output and screenshots go to `$d_test_dir` (default `/tmp/d_test`).
 ```bash
 d_test 20 gnome                    # Ubuntu's gnome on throwaway instance 20
 d_distro=debian d_test 20          # every Debian stage
+d_distro=archlinux d_test 20       # every Arch Linux stage
 ```
 
 **Run a program in an instance:** `d_exec COMMAND...` is `podman exec` in the

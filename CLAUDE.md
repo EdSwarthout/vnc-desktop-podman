@@ -1,8 +1,8 @@
 # CLAUDE.md — vnc-desktop-podman
 
 Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
-or Debian 13 (trixie) + GNOME Shell, over TigerVNC/noVNC, with
-Chrome, Claude Code and nested podman (plus smaller headless/xterm stages).
+or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
+Chrome (not on Arch), Claude Code and nested podman (plus smaller headless/xterm stages).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -16,6 +16,10 @@ See `README.md` for user-facing setup.
   `d_distro` (`ubuntu` default | `debian`) in `env.rc` picks the directory. The build
   context is the repo root for both, so they `COPY` the shared `start.sh` and
   `nested-subids`; anything distro-specific goes in that distro's directory.
+- `archlinux/Containerfile` — Arch Linux (rolling): `base` → `vnc` → `openbox`,
+  tagged `archcc:<stage>`, `d_distro=archlinux`, instances `ccNa`, ports
+  7050+N / 6230+N. `base`/`vnc` follow Debian's; what differs is under
+  "Arch Linux" in the design decisions. No `chrome` stage.
 - `start.sh` — entrypoint (PID 1's child under `--init`), shared by all stages:
   first-boot seeding of the home volume and `nested-subids`; then, if the
   stage has `vncserver`, runs `vncserver -fg` and `websockify` and exits when
@@ -35,7 +39,8 @@ See `README.md` for user-facing setup.
   `d_exec [-s] [-d] CMD` (`podman exec` minus ambient caps; `-s`: with the
   session's D-Bus/XDG environment), `d_rm [-f] [N]` (container **and home**; asks
   unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
-  apt step that ran, `0 B/…` = all from the shared cache). `_d_wait_ready` waits
+  apt step that ran, `0 B/…` = all from the shared cache; for archlinux, pacman
+  "downloaded/installed" per step). `_d_wait_ready` waits
   for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
 - `chrome/Containerfile` — `d_distro=chrome`, one stage `canary`, tagged
   `u2604chrome:canary`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
@@ -166,6 +171,42 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   glycin, so the `NET_RAW`/`bwrap` gotcha doesn't break GTK there. Debian's
   `ping` ships without file caps (it relies on `ping_group_range`, "0 0" in the
   container), so `base` does `setcap cap_net_raw=ep /usr/bin/ping` like Ubuntu's.
+- **Arch Linux** (`archlinux/`): stages `base`, `vnc`, `openbox`; the shared
+  `start.sh` and `nested-subids` run unchanged, so the image adapts to them:
+  - *Package cache*: same scheme and names as apt's (`apt-cache-archlinux`,
+    `/var/cache/apt-archlinux`, `d_aptcaches[archlinux]`), holding pacman's
+    packages: `pacman.conf` gets `CacheDir = /var/cache/apt-archlinux/` and loses
+    `DownloadUser` (it chowns its download dir to `alpm`, which a shared cache
+    can't do). Every pacman `RUN` is `pacman -Syu --noconfirm --needed …` (never
+    `-Sy`: no partial upgrades) with the tail `{ mountpoint -q
+    /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } && rm -rf
+    /var/lib/pacman/sync/*`. So an instance has no sync databases: as root,
+    `pacman -Syu --needed PKG` to try a package.
+  - *`vncserver`*: Arch's takes only a display and runs the systemd-style
+    session, so `/usr/local/bin/vncserver` (bash, written in the `vnc` stage)
+    takes Debian's arguments and runs `Xvnc` + `~/.config/tigervnc/xstartup`
+    in the foreground. `_d_session_sh` knows both wrappers and X server names
+    (`Xtigervnc`, `Xvnc`).
+  - *Session bus*: Arch's `dbus-launch` has no X11 support, so xstartup's
+    `dbus-launch --exit-with-session` kills its bus at once (stdin is
+    `/dev/null`); each `vnc-session` does `eval "$(dbus-launch --sh-syntax)"`
+    before `exec`ing the session (not `dbus-run-session`: the session process
+    must carry the bus address for `d_exec -s`).
+  - *noVNC/websockify* aren't packaged (AUR only): websockify from PyPI in
+    `/opt/websockify` (venv), noVNC's release tarball in `/usr/share/novnc`;
+    versions are build args.
+  - *pasta*: `/usr/bin/pasta{,.avx2}` are hard links to `passt{,.avx2}`, not
+    Arch's symlinks: a host with AppArmor profiles for both (Ubuntu) picks the
+    profile by resolved path, and under passt's, pasta can't open the netns
+    (nested containers: "Couldn't open network namespace … Permission denied").
+  - *podman 6*: `nested.conf` has `[engine] env = ["TMPDIR=/tmp"]`, because
+    `podman build` puts an overlay over the build context with its upper dir in
+    `$TMPDIR`, and `/var/tmp` is on the instance's overlay root ("mounting an
+    overlay over build context directory … invalid argument").
+  - *`openbox`*: `openbox-session`, own `/etc/xdg/openbox/menu.xml` (the
+    packaged one calls Debian's `x-terminal-emulator`), an xterm from the
+    system autostart, `scrot` for screenshots. Menu → Exit ends the session.
+    No locker installed (`tests/lock.sh` passes).
 - **`claude-desktop`** (the Claude desktop app) is in Ubuntu's `gnome` stage only, on
   purpose: it is still in beta, so don't add it to the other desktop stages. It
   comes from Anthropic's apt repository: the Containerfile downloads the signing
@@ -235,7 +276,8 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `~/Containers/<that name>`, with no `--hostname`; the parent's name comes
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
-  Debian 6950+N / 6130+N, so both distros' instance N can run at once.
+  Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
+  so every distro's instance N can run at once.
   `d_select N` keeps only N; `_d_names` works out name, home and ports from
   the current `d_distro` in every function that needs them (via
   `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.
