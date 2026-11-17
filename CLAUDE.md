@@ -47,13 +47,18 @@ See `README.md` for user-facing setup.
   `uv`: `/opt/uv/bin/uv` and `/opt/venv`, both owned by the user and outside the
   home volume, venv first on `PATH` and `VIRTUAL_ENV` set, so the user can
   `uv pip install` without root. `chrome/search_screenshot.py` is a Python example
-  (web search → PNG via the DevTools port). Instances `ccNc`, ports 7000+N / 6180+N.
+  (web search → PNG via the DevTools port). `install_chrome_devtools` (run by the
+  user, like `install_claude`) copies `chrome-devtools-mcp`'s bundled skills to
+  `~/.claude/skills`. Instances `ccNc`, ports 7000+N / 6180+N.
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
   add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`: the
   image's binary if there is one, else `npx`). `d_chrome_bin=google-chrome-canary`
-  for Canary.
+  for Canary. `d_devtools CMD...` runs the `chrome-devtools` CLI (same tools as the
+  MCP server; daemon in the instance, started on demand) in a `canary` instance.
+  Both get `_d_devtools_opts`: `--browserUrl`, no usage statistics, no CrUX,
+  `--workspace=/home/<user>` (+ `d_devtools_opts`).
   `chrome/README.md` — the automation options compared, and what has been tried.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out

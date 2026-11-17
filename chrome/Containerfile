@@ -54,13 +54,19 @@ RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-canary --no-sandbox --no-firs
 # Automation tools from npm, installed in the image (/usr/local) so that nothing is
 # downloaded and run at use time; all of them attach to a browser started with a DevTools
 # port (d_chrome) and none brings a browser of its own:
-#   chrome-devtools-mcp - MCP server (also the chrome-devtools CLI) on Puppeteer
+#   chrome-devtools-mcp - Chrome DevTools for agents: MCP server, the chrome-devtools
+#                         CLI (d_devtools) and agent skills (install_chrome_devtools)
 #   @playwright/mcp     - MCP server (playwright-mcp) on Playwright
 #   lighthouse          - page audits (performance, accessibility, SEO)
 #   playwright-core, puppeteer-core - the libraries, for scripts of your own
 # NODE_PATH lets a script anywhere `require` or `import` them.
 # PUPPETEER_SKIP_DOWNLOAD: belt and braces, the -core packages don't download a browser.
-ENV NODE_PATH=/usr/local/lib/node_modules
+# CHROME_DEVTOOLS_MCP_NO_*: chrome-devtools-mcp and its chrome-devtools CLI report usage
+# statistics to Google and look for updates unless told not to; the version here is the
+# image's, so an update notice is no use either.
+ENV NODE_PATH=/usr/local/lib/node_modules \
+    CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1 \
+    CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1
 RUN PUPPETEER_SKIP_DOWNLOAD=1 npm install -g --no-fund --no-audit --no-update-notifier \
         @playwright/mcp \
         chrome-devtools-mcp \
@@ -69,6 +75,28 @@ RUN PUPPETEER_SKIP_DOWNLOAD=1 npm install -g --no-fund --no-audit --no-update-no
         puppeteer-core \
     && rm -rf /root/.npm \
     && for c in chrome-devtools-mcp lighthouse playwright-mcp; do command -v $c >/dev/null || { echo "no $c" >&2; exit 1; }; done
+
+# install_chrome_devtools: for a Claude Code that runs in this instance (install_claude).
+# chrome-devtools-mcp ships agent skills (how to use the chrome-devtools CLI, debugging
+# accessibility, cookies, LCP, memory leaks, …); this copies them to the user's
+# ~/.claude/skills, leaving skills already there alone, and prints the command that
+# registers the MCP server. Run as the user at runtime, like install_claude: the home is
+# a volume. A browser must be up with the DevTools port (d_chrome from outside, or
+# google-chrome --remote-debugging-port=9222 --user-data-dir=$HOME/.config/chrome-automation).
+RUN printf '%s\n' '#!/bin/sh' \
+        'set -e' \
+        'src=/usr/local/lib/node_modules/chrome-devtools-mcp/skills' \
+        'mkdir -p ~/.claude/skills' \
+        'for s in "$src"/*/; do' \
+        '    n=$(basename "$s")' \
+        '    if [ -e ~/.claude/skills/"$n" ]; then echo "kept      ~/.claude/skills/$n"' \
+        '    else cp -r "$s" ~/.claude/skills/"$n"; echo "installed ~/.claude/skills/$n"; fi' \
+        'done' \
+        'echo "To add the MCP server to Claude Code here, run:"' \
+        'echo "  claude mcp add chrome-devtools -- chrome-devtools-mcp --browserUrl http://127.0.0.1:9222 --performanceCrux=false"' \
+        > /usr/local/bin/install_chrome_devtools \
+    && chmod +x /usr/local/bin/install_chrome_devtools \
+    && test -d /usr/local/lib/node_modules/chrome-devtools-mcp/skills
 
 # The session: Openbox and an xterm; closing the xterm ends it, which stops the container.
 # The xterm waits (up to 5 s) until Openbox manages the display: a window that maps
