@@ -18,6 +18,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
+| `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
 | `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
 
@@ -339,7 +340,7 @@ removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 removed again afterwards, unless `d_test_keep=1`) and prints `ok`/`FAIL` per check:
 the instance comes up, nested podman works (`tests/tests.sh`), no `VNC_PASSWORD` in
 `podman inspect` or any process, no `sudo`, the apt cache mounts, noVNC answers on
-IPv4 and IPv6, a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
+IPv4 and IPv6, Chrome renders a page, a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
 every lock request it knows, then checks that typing still reaches a window),
 ending the session stops the container and `podman start` brings it back. Build
 logs, check output and screenshots go to `$d_test_dir` (default `/tmp/d_test`).
@@ -352,6 +353,11 @@ d_distro=debian d_test 20          # every Debian stage
 selected instance without the ambient capabilities `--cap-add` would give it (GTK
 programs fail to load icons with them); `d_exec -s` adds the desktop session's
 D-Bus environment, and `-d` detaches: `d_exec -s -d gnome-terminal`.
+
+**Automate Chrome in an instance:** `d_chrome [URL...]` starts Chrome on the
+selected instance's desktop with its DevTools (remote debugging) port open, inside
+the instance only, and `d_chrome_mcp` prints the command that lets Claude Code drive
+that browser. See [chrome/README.md](chrome/README.md) for these and the other options.
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

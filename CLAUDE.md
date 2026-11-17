@@ -37,6 +37,11 @@ See `README.md` for user-facing setup.
   unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
   apt step that ran, `0 B/…` = all from the shared cache). `_d_wait_ready` waits
   for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
+- `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
+  instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
+  profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
+  add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`).
+  `chrome/README.md` — the automation options compared, and what has been tried.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out
   with `podman cp` and look at it to check a desktop by script.
@@ -177,6 +182,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   **Any new desktop stage: check that the screen can't lock.**
 - **Chrome** runs via the `/usr/local/bin/google-chrome-stable` wrapper
   (`--no-sandbox` etc.); `~/.config/chrome-flags.conf` does nothing on Ubuntu.
+- **Chrome automation** uses the DevTools port from inside the instance
+  (`d_chrome`): no published port, clients run there via `d_exec`/`podman exec -i`.
+  It needs a profile other than the default (`--user-data-dir`): since Chrome 136
+  `--remote-debugging-port` is ignored on `~/.config/google-chrome`.
 - **Ports bind all interfaces** on purpose (trusted LAN). Accepted.
 - `PODMAN_USERNS=keep-id`; container user `ed` is UID 1001 by default, same as on the host.
 - `label=disable` (not `:z`) on mounts.
