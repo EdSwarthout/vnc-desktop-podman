@@ -65,6 +65,13 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **Home is a volume** (`$d_dir/u2604ccN` or `$d_dir/d13ccN` → `/home/ed`). Anything put in
   `/home/ed` at build time is hidden; per-user setup belongs in `start.sh`'s
   first-boot blocks (guarded by "file doesn't exist yet") or runs at runtime.
+  The user's own files for new homes go in `<distro>/user_files/` (gitignored, may
+  be absent; the user's, don't edit or print them): the base stage packs them
+  into `/usr/local/share/user_files.tar` (`COPY LICENSE <distro>/user_file[s]`:
+  LICENSE is there because COPY fails when nothing matches), and `start.sh`
+  unpacks it as the last step of the "no `~/.bashrc`" first-boot block, over
+  `/etc/skel`'s files. The `D_NAME` `.bashrc` addition runs only when
+  `$D_NAME` is set and the `.bashrc` doesn't mention it yet.
 - **Claude Code** is installed by the user at runtime via `install_claude`
   (native installer → `~/.local/bin`, self-updating). Not baked into the image.
 - **Shared apt cache**: `$d_dir/apt-cache/archives` for Ubuntu,

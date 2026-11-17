@@ -14,7 +14,10 @@ fi
 # First-boot setup in the (volume-mounted) home dir
 
 # New home: seed dotfiles from /etc/skel (the volume mount hides what useradd copied)
-# and put ~/.local/bin (native Claude install) on PATH for non-login shells too.
+# and put ~/.local/bin (native Claude install) on PATH for non-login shells too. Last,
+# the image's <distro>/user_files (see the Containerfiles' base stage), only here, on
+# first boot: they replace what's there (e.g. a .bashrc of your own), but the home
+# dir's own mode is kept.
 if [ ! -f ~/.bashrc ]; then
     cp -r --update=none /etc/skel/. ~/
     mkdir -p ~/.local/bin
@@ -23,12 +26,17 @@ if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin${PATH:+:${PATH}}"
 fi
 EOF
+    if [ -f /usr/local/share/user_files.tar ]; then
+        tar -C ~ -xf /usr/local/share/user_files.tar --no-overwrite-dir \
+            || echo "start.sh: unpacking user_files.tar failed" >&2
+    fi
 fi
 
 # Nested instances share their parent's hostname, so the prompt and terminal title
 # (\h) would show the parent's name: use this instance's $D_NAME (set by d_run) there.
-# Added once, also to existing homes; a no-op where D_NAME is the hostname.
-if ! grep -q 'D_NAME' ~/.bashrc; then
+# Added once, also to existing homes (unless the .bashrc has it, e.g. from user_files);
+# a no-op where D_NAME is the hostname. Only when D_NAME is set (d_run sets it).
+if [ -n "${D_NAME:-}" ] && ! grep -q 'D_NAME' ~/.bashrc; then
     cat >> ~/.bashrc <<'EOF'
 # Nested instance: show its name ($D_NAME, from d_run) instead of the shared hostname
 if [ -n "${D_NAME:-}" ] && [ "$D_NAME" != "$HOSTNAME" ]; then

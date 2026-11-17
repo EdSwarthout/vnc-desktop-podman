@@ -143,6 +143,19 @@ RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://claude.ai/install.sh | bash
 # has one, otherwise it just waits (use `podman exec -it <name> bash`).
 COPY --chmod=755 start.sh /usr/local/bin/start.sh
 
+# Files for the home: ubuntu/user_files/ (gitignored, may be absent) is packed into
+# /usr/local/share/user_files.tar, which start.sh unpacks into a new home on its first
+# boot, over /etc/skel's copies. Changing them rebuilds every later stage. LICENSE
+# is only there because COPY fails when no source exists (a top-level user_files/LICENSE
+# would be dropped). The files are in the image: no secrets, if the image is shared.
+COPY LICENSE ubuntu/user_file[s] /tmp/user_files/
+RUN rm /tmp/user_files/LICENSE \
+    && if [ -n "$(ls -A /tmp/user_files)" ]; then \
+           find /tmp/user_files -mindepth 1 -maxdepth 1 -printf '%P\0' \
+           | tar -C /tmp/user_files --null -T - --owner=0 --group=0 -cf /usr/local/share/user_files.tar; \
+       fi \
+    && rm -rf /tmp/user_files
+
 USER ${USERID}
 WORKDIR /home/${USERID}
 CMD ["/usr/local/bin/start.sh"]

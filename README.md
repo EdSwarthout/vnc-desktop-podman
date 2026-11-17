@@ -19,6 +19,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
 | `.env`          | Your VNC password and local settings (not in git)             |
+| `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
 
 ## Requirements
 
@@ -189,6 +190,16 @@ kept).
 
 `d_run` uses `--replace`, so running it again restarts the instance from the
 current image; the home dir is kept.
+
+**Your own files in new homes:** put them in `ubuntu/user_files/` or
+`debian/user_files/` (gitignored), laid out as in the home, e.g. `.bashrc`,
+`.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
+image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
+and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
+defaults. Existing homes are not touched, and later edits in the home are kept.
+They are in the image, so leave out secrets if you share it. A `.bashrc` of your
+own should keep `start.sh`'s additions (the `~/.local/bin` PATH lines, and the
+`D_NAME` prompt lines for nested instances): copy them from a home it set up.
 
 Instances use the host's timezone (`--tz=local`); a nested one gets its parent
 instance's.
