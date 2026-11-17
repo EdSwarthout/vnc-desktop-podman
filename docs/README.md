@@ -4,7 +4,7 @@ Each stage's desktop as it first comes up: a new home dir, nothing opened,
 1440x900 (`VNC_RESOLUTION`). See [Stages](../README.md#stages) for what each one
 contains.
 
-`base` is headless, so it has no screenshot. `chrome` starts with the same
+`base` is headless, so it has no screenshot. `chrome` (Arch Linux: `chromium`) starts with the same
 bare `xterm` as `vnc`. Ubuntu's stages first, then [Debian's](#debian) and
 [Arch Linux's](#arch-linux).
 
@@ -42,11 +42,11 @@ It starts in the Activities overview, as GNOME does.
 
 # Arch Linux
 
-## `vnc`: xterm
+## `vnc` (and `chromium`): xterm
 ![Arch Linux vnc stage: a bare xterm](archlinux/vnc.png)
 
 ## `openbox`: Openbox
-One xterm; the menu (Terminal, window list, Exit) is a right-click on the background.
+One xterm; the menu (Terminal, Chromium, window list, Exit) is a right-click on the background.
 ![Arch Linux openbox stage](archlinux/openbox.png)
 
 ## Retaking them

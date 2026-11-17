@@ -2,7 +2,7 @@
 
 Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
 or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
-Chrome (not on Arch), Claude Code and nested podman (plus smaller headless/xterm stages).
+Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -16,10 +16,10 @@ See `README.md` for user-facing setup.
   `d_distro` (`ubuntu` default | `debian`) in `env.rc` picks the directory. The build
   context is the repo root for both, so they `COPY` the shared `start.sh` and
   `nested-subids`; anything distro-specific goes in that distro's directory.
-- `archlinux/Containerfile` — Arch Linux (rolling): `base` → `vnc` → `openbox`,
+- `archlinux/Containerfile` — Arch Linux (rolling): `base` → `vnc` → `chromium` → `openbox`,
   tagged `archcc:<stage>`, `d_distro=archlinux`, instances `ccNa`, ports
   7050+N / 6230+N. `base`/`vnc` follow Debian's; what differs is under
-  "Arch Linux" in the design decisions. No `chrome` stage.
+  "Arch Linux" in the design decisions. `chromium` stands where `chrome` does.
 - `start.sh` — entrypoint (PID 1's child under `--init`), shared by all stages:
   first-boot seeding of the home volume and `nested-subids`; then, if the
   stage has `vncserver`, runs `vncserver -fg` and `websockify` and exits when
@@ -171,7 +171,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   glycin, so the `NET_RAW`/`bwrap` gotcha doesn't break GTK there. Debian's
   `ping` ships without file caps (it relies on `ping_group_range`, "0 0" in the
   container), so `base` does `setcap cap_net_raw=ep /usr/bin/ping` like Ubuntu's.
-- **Arch Linux** (`archlinux/`): stages `base`, `vnc`, `openbox`; the shared
+- **Arch Linux** (`archlinux/`): stages `base`, `vnc`, `chromium`, `openbox`; the shared
   `start.sh` and `nested-subids` run unchanged, so the image adapts to them:
   - *Package cache*: same scheme and names as apt's (`apt-cache-archlinux`,
     `/var/cache/apt-archlinux`, `d_aptcaches[archlinux]`), holding pacman's
@@ -203,8 +203,17 @@ The user builds, runs and pushes from the host. This clone has an `origin`
     `podman build` puts an overlay over the build context with its upper dir in
     `$TMPDIR`, and `/var/tmp` is on the instance's overlay root ("mounting an
     overlay over build context directory … invalid argument").
+  - *`chromium`*: Arch's `chromium` package (Google Chrome is AUR-only) and
+    the web fonts. No wrapper: `/usr/bin/chromium` is Arch's launcher, which
+    reads `/etc/chromium-flags.conf` (`--no-sandbox --no-first-run
+    --no-default-browser-check`); the build checks that `chromium --help`
+    (stderr) lists the flag. The sandbox did work in a test without the flag;
+    `--no-sandbox` is kept to match Chrome's stages. `ENV BROWSER=chromium`.
+    `env.rc` treats the stage like `chrome` (`d_test`'s browser check uses
+    `google-chrome` or else `chromium`; `d_screenshots` skips it);
+    `d_chrome_bin=chromium d_chrome` for automation.
   - *`openbox`*: `openbox-session`, own `/etc/xdg/openbox/menu.xml` (the
-    packaged one calls Debian's `x-terminal-emulator`), an xterm from the
+    packaged one calls Debian's `x-terminal-emulator`; ours has Terminal, Chromium, Exit), an xterm from the
     system autostart, `scrot` for screenshots. Menu → Exit ends the session.
     No locker installed (`tests/lock.sh` passes).
 - **`claude-desktop`** (the Claude desktop app) is in Ubuntu's `gnome` stage only, on

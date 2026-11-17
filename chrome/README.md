@@ -12,7 +12,7 @@ stage from `chrome` on; the [image](#the-browser-image) built from the
   DevTools (remote debugging) port open at `http://127.0.0.1:9222` (`d_chrome_port`)
   and waits until the port answers. If that Chrome is already running, the URLs open
   in it; started without a URL, it shows `chrome://version/` (version, command line
-  and profile path of the browser you got). `d_chrome_bin=google-chrome-canary d_chrome` starts Canary instead (own
+  and profile path of the browser you got). `d_chrome_bin=google-chrome-canary d_chrome` starts Canary instead, `d_chrome_bin=chromium` Chromium (Arch Linux's stages) (own
   profile; give it another `d_chrome_port` to run both at once).
 - **`d_chrome_mcp`** prints the command that registers that browser with Claude Code
   as MCP server `chrome-<instance>`. It only prints: the command changes your Claude

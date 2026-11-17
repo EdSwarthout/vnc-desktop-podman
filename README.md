@@ -2,7 +2,7 @@
 
 A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop
 on Ubuntu 26.04, GNOME on Debian 13 (trixie), or Openbox on Arch Linux, over VNC/noVNC,
-with Google Chrome (not on Arch), Claude Code and nested rootless podman. Smaller stages
+with Google Chrome (Chromium on Arch), Claude Code and nested rootless podman. Smaller stages
 (headless, or VNC with just an xterm) are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
 Each instance keeps its home directory on the host, so settings, browser profile
 and the Claude install survive rebuilds.
@@ -13,7 +13,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 |-----------------|---------------------------------------------------------------|
 | `ubuntu/Containerfile` | Ubuntu image stages `base` → `vnc` → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon` (see [Stages](#stages)) |
 | `debian/Containerfile` | Debian image stages `base` → `vnc` → `chrome` → `gnome` (see [Debian](#debian)) |
-| `archlinux/Containerfile` | Arch Linux image stages `base` → `vnc` → `openbox` (see [Arch Linux](#arch-linux)) |
+| `archlinux/Containerfile` | Arch Linux image stages `base` → `vnc` → `chromium` → `openbox` (see [Arch Linux](#arch-linux)) |
 | `start.sh`      | Container entrypoint (all distros): first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot (all distros) |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
@@ -163,9 +163,9 @@ The dash has Chrome, Files and Terminal; no Claude desktop app.
 ### Arch Linux
 
 `archlinux/Containerfile` builds Arch Linux (rolling) the same way: stages
-`base` and `vnc` (as in Ubuntu and Debian) and `openbox`, a bare window manager.
-There is no `chrome` stage: Google Chrome isn't in Arch's repositories. Images
-are tagged `archcc:<stage>`:
+`base` and `vnc` (as in Ubuntu and Debian), `chromium` and `openbox`, a bare
+window manager. `chromium` takes the place of `chrome`: Google Chrome isn't in
+Arch's repositories, Chromium is. Images are tagged `archcc:<stage>`:
 ```bash
 mkdir -p "$d_dir"/apt-cache-archlinux/archives   # once: d_build needs it
 d_distro=archlinux d_0                        # podman pull docker.io/library/archlinux:latest
@@ -181,10 +181,16 @@ it fails until the instance is recreated with `d_run` (or
 `d_aptcaches[archlinux]=…` points somewhere else).
 
 `openbox` starts with one xterm on an empty background. Right-click the
-background for the menu: **Terminal**, the window list, and **Exit**, which
+background for the menu: **Terminal**, **Chromium**, the window list, and **Exit**, which
 ends the session and stops the container. There is no panel and no screen
 locker. A `~/.config/openbox/menu.xml` of your own replaces the image's menu;
 a `~/.config/openbox/autostart` runs in addition to the image's.
+
+Chromium (stage `chromium` and up) runs with `--no-sandbox`, as Chrome does in
+the other images; the flags are in `/etc/chromium-flags.conf`, which Arch's
+launcher reads, so there is no wrapper script. For automation, name the browser:
+`d_chrome_bin=chromium d_chrome` (profile `~/.config/chromium-automation`);
+see [chrome/README.md](chrome/README.md).
 
 Differences from the Debian-based images, all handled in the image: Arch's
 `vncserver` only works with systemd, so `/usr/local/bin/vncserver` stands in
@@ -379,7 +385,7 @@ removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 removed again afterwards, unless `d_test_keep=1`) and prints `ok`/`FAIL` per check:
 the instance comes up, nested podman works (`tests/tests.sh`), no `VNC_PASSWORD` in
 `podman inspect` or any process, no `sudo`, the apt cache mounts, noVNC answers on
-IPv4 and IPv6, Chrome renders a page (stages that have Chrome), a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
+IPv4 and IPv6, Chrome (on Arch: Chromium) renders a page, a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
 every lock request it knows, then checks that typing still reaches a window),
 ending the session stops the container and `podman start` brings it back. Build
 logs, check output and screenshots go to `$d_test_dir` (default `/tmp/d_test`).
