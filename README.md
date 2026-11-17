@@ -40,21 +40,28 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
    - `$d_dir/u2604cc` (Ubuntu) and `$d_dir/d13cc` (Debian) — prefixes for
      each instance's home dir (Ubuntu instance 1 → `$d_dir/u2604cc1`); set
      `d_homes0[debian]=…` etc. in `.env` to put them elsewhere.
-   - `$d_dir/apt-cache/archives` — downloaded `.deb`s (Ubuntu's; Debian's are in
-     `$d_dir/apt-cache-debian/archives`, set up the same way), mounted on
-     `/var/cache/apt/archives` in builds and containers, and meant to be
-     shared between machines over NFS so packages are downloaded once. That's
-     why it's a mounted directory rather than a podman build cache, which
-     stays local to one machine. Create it: `mkdir -p "$d_dir/apt-cache/archives"`. On the NFS server, export this `archives` directory, e.g.:
+   - `$d_dir/apt-cache/archives` (Ubuntu) and `$d_dir/apt-cache-debian/archives`
+     (Debian) — downloaded `.deb`s, one cache per distro, meant to be shared
+     between machines over NFS so packages are downloaded once. That's why
+     they're mounted directories rather than a podman build cache, which stays
+     local to one machine. `d_build` mounts the distro's cache on
+     `/var/cache/apt-<distro>` (where the images' apt keeps its `.deb`s);
+     `d_run` mounts both, on `/var/cache/apt-ubuntu` and
+     `/var/cache/apt-debian`, so a build inside an instance uses the right one
+     for either distro (a missing one is skipped with a note). Create them:
+     `mkdir -p "$d_dir"/apt-cache{,-debian}/archives`. On the NFS server,
+     export these `archives` directories, e.g.:
      ```
      /mnt/hwd23data/sw/docker/apt-cache/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
+     /mnt/hwd23data/sw/docker/apt-cache-debian/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
      ```
-     On a client, mount it at that client's `$d_aptcache`.
+     On a client, mount them at the same paths under that client's `$d_dir`,
+     or set `d_aptcaches[ubuntu]=…` / `d_aptcaches[debian]=…` in `.env`.
 
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
    the first 8 characters) and your `d_dir`. `env.rc` sources it, so it can
    override any of the defaults at the top of `env.rc` (`d_dir`, `d_user`,
-   `d_distro`, `d_target`, `d_aptcache` (one cache for every distro), `d_homes0`):
+   `d_distro`, `d_target`, `d_aptcaches`, `d_homes0`):
    ```bash
    cat > .env <<'EOF'
    export VNC_PASSWORD=yourpass

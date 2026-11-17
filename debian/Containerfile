@@ -25,15 +25,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     USERID=${USERID}
 
-# Keep downloaded .debs: d_build/d_run mount the shared (NFS) $d_aptcache on
-# /var/cache/apt/archives. The image's docker-clean deletes .debs after every install, so
-# drop it, but keep its other job: no pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt
-# from the lists anyway). Each apt RUN ends with
-# `mountpoint -q /var/cache/apt/archives || apt-get clean`, so a plain `podman build`
-# without the mount doesn't leave .debs in the image layers either.
+# Keep downloaded .debs: apt keeps them in /var/cache/apt-debian (Dir::Cache::archives),
+# where d_build mounts the shared (NFS) debian apt cache; d_run mounts both distros'
+# caches (/var/cache/apt-ubuntu, /var/cache/apt-debian), so a build nested in an
+# instance uses the right one whichever distro it is. The image's docker-clean deletes .debs
+# after every install, so drop it, but keep its other job: no
+# pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt from the lists anyway). Each apt
+# RUN ends with `mountpoint -q /var/cache/apt-debian || apt-get clean`, so a plain
+# `podman build` without the mount doesn't leave .debs in the image layers either.
 RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
-        > /etc/apt/apt.conf.d/docker-no-pkgcache
+        > /etc/apt/apt.conf.d/docker-no-pkgcache \
+    && printf 'Dir::Cache::archives "/var/cache/apt-debian/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives
 
 # Basics, network/debug and development tools, and nested rootless podman. The user
 # has no root in the container (below), so what's needed at runtime has to be here.
@@ -82,7 +85,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     wget \
     xz-utils \
     zip \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Non-root user with a fixed UID; a user the base image ships with that UID makes way
@@ -179,7 +182,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tigervnc-viewer \
     websockify \
     xterm \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # The session: closing it (exit the xterm, or log out of a desktop) stops the container.
@@ -201,14 +204,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Google Chrome (amd64 only). The .deb's postinst adds Google's apt repo + key itself.
 RUN curl -fsSLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get update && apt-get install -y /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Chrome needs these flags in a container (no user-namespace sandbox).
@@ -247,7 +250,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnome-shell \
     gnome-terminal \
     nautilus \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # No systemd: gnome-session falls back to starting the session itself, but aborts without

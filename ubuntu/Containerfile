@@ -30,15 +30,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     USERID=${USERID}
 
-# Keep downloaded .debs: d_build/d_run mount the shared (NFS) $d_aptcache on
-# /var/cache/apt/archives. Ubuntu's docker-clean deletes .debs after every install, so
-# drop it, but keep its other job: no pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt
-# from the lists anyway). Each apt RUN ends with
-# `mountpoint -q /var/cache/apt/archives || apt-get clean`, so a plain `podman build`
-# without the mount doesn't leave .debs in the image layers either.
+# Keep downloaded .debs: apt keeps them in /var/cache/apt-ubuntu (Dir::Cache::archives),
+# where d_build mounts the shared (NFS) ubuntu apt cache; d_run mounts both distros'
+# caches (/var/cache/apt-ubuntu, /var/cache/apt-debian), so a build nested in an
+# instance uses the right one whichever distro it is. Ubuntu's docker-clean deletes .debs
+# after every install, so drop it, but keep its other job: no
+# pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt from the lists anyway). Each apt
+# RUN ends with `mountpoint -q /var/cache/apt-ubuntu || apt-get clean`, so a plain
+# `podman build` without the mount doesn't leave .debs in the image layers either.
 RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
-        > /etc/apt/apt.conf.d/docker-no-pkgcache
+        > /etc/apt/apt.conf.d/docker-no-pkgcache \
+    && printf 'Dir::Cache::archives "/var/cache/apt-ubuntu/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives
 
 # Basics, network/debug and development tools, and nested rootless podman. The user
 # has no root in the container (below), so what's needed at runtime has to be here.
@@ -87,7 +90,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     wget \
     xz-utils \
     zip \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Non-root user with a fixed UID; a user the base image ships with that UID (Ubuntu's
@@ -178,7 +181,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tigervnc-viewer \
     websockify \
     xterm \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # The session: closing it (exit the xterm, or log out of a desktop) stops the container.
@@ -200,14 +203,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Google Chrome (amd64 only). The .deb's postinst adds Google's apt repo + key itself.
 RUN curl -fsSLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get update && apt-get install -y /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Chrome needs these flags in a container (no user-namespace sandbox).
@@ -242,7 +245,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4 \
     xfce4-screenshooter \
     xfce4-terminal \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 RUN printf '#!/bin/sh\nexec startxfce4\n' > /usr/local/bin/vnc-session
@@ -270,7 +273,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     qt6-svg-plugins \
     qterminal \
     screengrab \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Panel without the volume plugin: there's no sound device in the container, so it only
@@ -300,7 +303,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnome-session-flashback \
     gnome-terminal \
     seahorse \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # gnome-session needs systemd to start a session, so start Flashback's parts directly:
@@ -352,7 +355,7 @@ RUN curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc \
     && echo 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
         > /etc/apt/sources.list.d/claude-desktop.list \
     && apt-get update && apt-get install -y claude-desktop gnome-keyring \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 USER ${USERID}
@@ -373,7 +376,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     plasma-desktop \
     plasma-session-x11 \
     systemsettings \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # SHELL: nothing sets it in the container (no login), and Konsole warns without it.
@@ -410,7 +413,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mate-desktop-environment-core \
     mate-terminal \
     scrot \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Panel layout: Ubuntu's default ("familiar") uses applets that aren't installed (they
@@ -434,7 +437,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cinnamon-core \
     gnome-terminal \
     scrot \
-    && { mountpoint -q /var/cache/apt/archives || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # cinnamon2d: Cinnamon's software-rendering session (there's no GPU behind the VNC X

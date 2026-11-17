@@ -46,9 +46,9 @@ the home volume. Every stage has a nested rootless podman
 for scratch containers, but it is *not* the host's podman, and the host paths
 (`$d_dir`, the NFS apt cache) are not visible. When `$container` is set, `env.rc`
 switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_N<distro letter>` (e.g. `cc1u_1d`) with home `~/Containers/<that name>`,
-the instance's own apt cache mount, no `--hostname`), so `d_build`/`d_run` here
+the instance's `/var/cache/apt-<distro>` cache mounts, no `--hostname`), so `d_build`/`d_run` here
 build and run a nested instance in the nested podman, not a host one. Check things in the container directly (`/proc/1/environ`,
-`mountpoint /var/cache/apt/archives`, `~/.config/tigervnc`) and test `env.rc`
+`mountpoint /var/cache/apt-ubuntu /var/cache/apt-debian`, `~/.config/tigervnc`) and test `env.rc`
 changes with a stubbed `podman`, both ways (`container=` for host behaviour):
 ```bash
 T=$(mktemp -d)   # d_run really creates the home dir and its passwd.init there
@@ -74,12 +74,17 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `$D_NAME` is set and the `.bashrc` doesn't mention it yet.
 - **Claude Code** is installed by the user at runtime via `install_claude`
   (native installer → `~/.local/bin`, self-updating). Not baked into the image.
-- **Shared apt cache**: `$d_dir/apt-cache/archives` for Ubuntu,
-  `$d_dir/apt-cache-debian/archives` for Debian (separate: same file names,
-  different contents; `d_aptcache` in `.env` forces one; nested, it's the
-  instance's own mount whatever the distro), NFS-shared between machines, is mounted on `/var/cache/apt/archives` in both build and
-  run. `docker-clean` is replaced by `docker-no-pkgcache`; every apt `RUN` ends
-  with `{ mountpoint -q /var/cache/apt/archives || apt-get clean; }` and
+- **Shared apt caches**, one per distro (same file names, different
+  contents), NFS-shared between machines: host `$d_dir/apt-cache/archives`
+  (Ubuntu) and `$d_dir/apt-cache-debian/archives` (Debian), or
+  `d_aptcaches[<distro>]` from `.env`. Each image's apt keeps `.deb`s in
+  `/var/cache/apt-<distro>` (`Dir::Cache::archives`, apt.conf.d
+  `vnc-desktop-archives`; apt creates the dir when nothing's mounted).
+  `d_build` mounts the distro's cache there; `d_run` mounts every distro's
+  that exists (`/var/cache/apt-ubuntu`, `/var/cache/apt-debian`), and nested,
+  `env.rc` uses those mounts, so nested builds of either distro get their own
+  cache. `docker-clean` is replaced by `docker-no-pkgcache`; every apt `RUN` ends
+  with `{ mountpoint -q /var/cache/apt-<distro> || apt-get clean; }` and
   `rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin`. Keep that tail on new
   apt `RUN`s. Not a buildah cache mount, because it must be shareable over NFS.
 - **VNC password** never goes in the container env (it stayed in `podman
@@ -188,8 +193,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   No seccomp or further relaxation: ask before adding any.
 - Instance N (1-49) → container `ccN` + first letter of `d_distro` (`cc1u`,
   `cc1d`), same hostname; home `${d_homes0[<distro>]}N`, default
-  `$d_dir/<image name>N` (`u2604cc1`, `d13cc1`; an old `.env`'s `d_home0` is
-  Ubuntu's). When `d_run` runs nested (`$container` set) it's
+  `$d_dir/<image name>N` (`u2604cc1`, `d13cc1`). When `d_run` runs nested (`$container` set) it's
   `<this instance>_N<letter>` (e.g. `cc2u_1d`, then `cc2u_1d_1u`), home
   `~/Containers/<that name>`, with no `--hostname`; the parent's name comes
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
