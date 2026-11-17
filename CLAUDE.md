@@ -37,10 +37,19 @@ See `README.md` for user-facing setup.
   unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
   apt step that ran, `0 B/…` = all from the shared cache). `_d_wait_ready` waits
   for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
+- `chrome/Containerfile` — `d_distro=chrome`, one stage `canary`, tagged
+  `u2604chrome:canary`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
+  `chrome` stage first: `d_parents[chrome]="ubuntu chrome"`, which also makes it use
+  Ubuntu's apt cache) + `google-chrome-canary` (wrapper like stable's), Openbox +
+  xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
+  (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
+  `lighthouse`; `NODE_PATH` set). Instances `ccNc`, ports 7000+N / 6180+N.
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
-  add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`).
+  add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`: the
+  image's binary if there is one, else `npx`). `d_chrome_bin=google-chrome-canary`
+  for Canary.
   `chrome/README.md` — the automation options compared, and what has been tried.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out

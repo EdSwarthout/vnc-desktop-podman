@@ -18,7 +18,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
-| `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
+| `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
 | `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
 
@@ -357,7 +357,10 @@ D-Bus environment, and `-d` detaches: `d_exec -s -d gnome-terminal`.
 **Automate Chrome in an instance:** `d_chrome [URL...]` starts Chrome on the
 selected instance's desktop with its DevTools (remote debugging) port open, inside
 the instance only, and `d_chrome_mcp` prints the command that lets Claude Code drive
-that browser. See [chrome/README.md](chrome/README.md) for these and the other options.
+that browser. `d_distro=chrome d_target=canary` is an image for this: Ubuntu's
+`chrome` stage plus Chrome Canary, Puppeteer, Playwright, their MCP servers and
+Lighthouse (instances `ccNc`, VNC 7000+N, noVNC 6180+N).
+See [chrome/README.md](chrome/README.md) for all of it and the other options.
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

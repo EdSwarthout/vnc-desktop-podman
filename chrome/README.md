@@ -2,17 +2,22 @@
 
 How to drive the Chrome of an instance from outside it: from the host, or from a
 parent instance for a nested one (`cc8u` → `cc8u_1u`). The helpers are in
-[`env.rc`](env.rc) here, which the top-level `env.rc` sources.
+[`env.rc`](env.rc) here, which the top-level `env.rc` sources. They work with every
+stage from `chrome` on; the [image](#the-browser-image) built from the
+[`Containerfile`](Containerfile) here adds Chrome Canary and the tools.
 
 ## Helpers
 
 - **`d_chrome [URL...]`** starts Chrome on the selected instance's desktop with its
   DevTools (remote debugging) port open at `http://127.0.0.1:9222` (`d_chrome_port`)
   and waits until the port answers. If that Chrome is already running, the URLs open
-  in it.
+  in it. `d_chrome_bin=google-chrome-canary d_chrome` starts Canary instead (own
+  profile; give it another `d_chrome_port` to run both at once).
 - **`d_chrome_mcp`** prints the command that registers that browser with Claude Code
   as MCP server `chrome-<instance>`. It only prints: the command changes your Claude
-  Code configuration and runs an npm package, so it's yours to run.
+  Code configuration, so it's yours to run. It uses the image's `chrome-devtools-mcp`
+  where there is one, and `npx -y chrome-devtools-mcp@latest` (downloaded into the
+  instance's home at each start) otherwise.
 - **`d_test`** (top-level `env.rc`) checks "Chrome renders a page (headless)" for
   every stage from `chrome` on.
 
@@ -22,6 +27,34 @@ d_chrome https://example.com
 d_exec curl -s http://127.0.0.1:9222/json/list      # the open pages, as JSON
 d_chrome_mcp                                        # prints: claude mcp add chrome-cc1u -- podman exec -i cc1u …
 ```
+
+## The browser image
+
+`d_distro=chrome` selects [`Containerfile`](Containerfile) here: Ubuntu's `chrome`
+stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `canary`, image
+`u2604chrome:canary`:
+
+- **Google Chrome Canary** (`google-chrome-canary`, from the apt repository that the
+  stable Chrome set up), behind the same `--no-sandbox` wrapper as stable. Stable
+  stays the default browser.
+- **npm tools in the image** (`/usr/local`, on `NODE_PATH`), so nothing is downloaded
+  and run at use time: `chrome-devtools-mcp` and `@playwright/mcp` (MCP servers),
+  `puppeteer-core` and `playwright-core` (for scripts: `require("puppeteer-core")`
+  works anywhere), `lighthouse` (page audits). None brings a browser of its own:
+  they attach to the one `d_chrome` started.
+- **Openbox** as window manager (the session is Openbox + an xterm; closing the
+  xterm stops the container), `scrot` (screenshots), `socat` (relays), `ffmpeg`
+  (video from screenshots or the display).
+
+```bash
+d_distro=chrome d_target=canary d_build      # builds ubuntu's chrome stage first
+d_select 1; d_distro=chrome d_target=canary d_run          # cc1c, VNC 7001, noVNC 6181
+d_distro=chrome d_chrome_bin=google-chrome-canary d_chrome https://example.com
+d_distro=chrome d_exec node my-script.js     # a Puppeteer/Playwright script in the home
+d_distro=chrome d_test 20 canary             # the usual checks
+```
+The versions of Canary and the npm tools are whatever is current when the layer is
+built; `d_build_fresh` renews them.
 
 ## Two things that shape everything
 
@@ -39,28 +72,31 @@ d_chrome_mcp                                        # prints: claude mcp add chr
 
 | Option | How it reaches Chrome | Needs | Verdict |
 |---|---|---|---|
-| **MCP server in the instance**: `podman exec -i <instance> npx chrome-devtools-mcp --browserUrl http://127.0.0.1:9222` (or `@playwright/mcp --cdp-endpoint …`), registered with Claude Code | stdio through `podman exec`; no port | `d_chrome`; an npm download into the instance's home on first use | Recommended for interactive use (navigate, click, read DOM, console and network, page screenshots). **Not tested yet**, see below. |
-| **Script in the instance**: `d_exec node script.js` with `puppeteer-core` or `playwright-core` attached to the port | same | `d_chrome`; `npm install` of one package in the instance's home (no root needed) | For repeatable checks that need interaction. |
+| **MCP server in the instance**: `podman exec -i <instance> chrome-devtools-mcp --browserUrl http://127.0.0.1:9222` (or `playwright-mcp --cdp-endpoint …`), registered with Claude Code | stdio through `podman exec`; no port | `d_chrome`; the browser image, or an npm download into the instance's home at each start | Recommended for interactive use (navigate, click, read DOM, console and network, page screenshots, Lighthouse, performance traces). |
+| **Script in the instance**: `d_exec node script.js` with `puppeteer-core` or `playwright-core` attached to the port | same | `d_chrome`; the browser image, or `npm install` of one package in the instance's home (no root needed) | For repeatable checks that need interaction. |
 | **Headless one-shots**: `google-chrome --headless --dump-dom URL`, `--screenshot=FILE URL` | `d_exec` | nothing | In `d_test`. No dependencies, no interaction, not the visible browser. |
 | **Client outside, over a published port** | an extra `-p` in `d_run` plus a relay in the instance (Chrome won't listen on other addresses) | changing `d_run`, recreating instances | Skip: more moving parts, and browser control on a port. |
 | **`xdotool` + screenshots** (`tests/screenshot.sh`) | `d_exec` | nothing (stage `vnc` has `xdotool`) | For what's outside the page: dialogs, the browser's own UI, other apps. Blind: coordinates and timing, no DOM. |
 | **Claude in Chrome extension** in the instance | the extension's own channel | installing and signing in the extension in that profile | For a long-lived instance used as a personal browser; not for throwaway ones. |
 | **Selenium / chromedriver** | `d_exec` | a `chromedriver` matching Chrome's version | Skip: nothing the script option doesn't do with less setup. |
 
-The images need no change for any of the first three: Chrome, Node 22 and npm are
-already there (`nodejs` and `npm` are in `base`).
+The other images need no change for the first three: Chrome, Node 22 and npm are
+already there (`nodejs` and `npm` are in `base`); the browser image only saves the
+downloads.
 
-## What has been tried (2026-11-16, Chrome 157, nested in `cc8u`)
+## What has been tried (2026-11-16, nested in `cc8u`)
 
-- `d_chrome` on a Ubuntu `gnome` instance: the port answered, `/json/list` showed the
-  pages, a second `d_chrome URL` opened in the same browser. Not run on Debian.
-- The headless check in `d_test`: passes on Ubuntu and Debian `gnome`.
-- **Not tried: the MCP server.** Whether `chrome-devtools-mcp` starts in an instance,
-  and whether `--browserUrl` is the right spelling of its flag, is unconfirmed. To
-  try it: `d_run` an instance, `d_chrome`, run the line `d_chrome_mcp` prints, then
-  restart Claude Code so it loads the server.
-- Not tried either: a Puppeteer or Playwright script, `@playwright/mcp`, and any of
-  this on the host.
+- `d_chrome` on a Ubuntu `gnome` instance (Chrome 157): the port answered, `/json/list`
+  showed the pages, a second `d_chrome URL` opened in the same browser. Not run on Debian.
+- The headless check in `d_test`: passes on Ubuntu and Debian `gnome` and on `canary`.
+- The browser image: `d_test` passes all its checks. With Canary 160 started by
+  `d_chrome`: a `puppeteer-core` script read the page and saved a page screenshot,
+  `playwright-core` connected over CDP and read the title, and `chrome-devtools-mcp`
+  1.13 answered `initialize`, `tools/list` (33 tools) and a `list_pages` call over
+  `podman exec -i`, with the flags `d_chrome_mcp` prints.
+- **Not tried:** the MCP server registered in a real Claude Code session,
+  `playwright-mcp`, `lighthouse` and `ffmpeg` beyond `--version`, the `npx` variant
+  on the other images, and any of this on the host.
 
 ## Sources
 
