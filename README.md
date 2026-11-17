@@ -358,8 +358,8 @@ D-Bus environment, and `-d` detaches: `d_exec -s -d gnome-terminal`.
 selected instance's desktop with its DevTools (remote debugging) port open, inside
 the instance only, and `d_chrome_mcp` prints the command that lets Claude Code drive
 that browser. `d_distro=chrome d_target=canary` is an image for this: Ubuntu's
-`chrome` stage plus Chrome Canary, Puppeteer, Playwright, their MCP servers and
-Lighthouse (instances `ccNc`, VNC 7000+N, noVNC 6180+N).
+`chrome` stage plus Chrome Canary, Puppeteer, Playwright (Node and Python, with
+`uv`), their MCP servers and Lighthouse (instances `ccNc`, VNC 7000+N, noVNC 6180+N).
 See [chrome/README.md](chrome/README.md) for all of it and the other options.
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home

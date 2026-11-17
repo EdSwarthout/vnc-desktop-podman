@@ -42,6 +42,10 @@ stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `canary`, im
   `puppeteer-core` and `playwright-core` (for scripts: `require("puppeteer-core")`
   works anywhere), `lighthouse` (page audits). None brings a browser of its own:
   they attach to the one `d_chrome` started.
+- **Python**: `uv` (`/opt/uv/bin`) and a virtual environment (`/opt/venv`) with
+  `playwright`, both owned by the user. The venv is first on `PATH`, so `python3`
+  finds `playwright`, and `uv pip install NAME` adds packages without root (they
+  last until the instance is replaced; add them to the `Containerfile` to keep them).
 - **Openbox** as window manager (the session is Openbox + an xterm; closing the
   xterm stops the container), `scrot` (screenshots), `socat` (relays), `ffmpeg`
   (video from screenshots or the display).
@@ -51,10 +55,18 @@ d_distro=chrome d_target=canary d_build      # builds ubuntu's chrome stage firs
 d_select 1; d_distro=chrome d_target=canary d_run          # cc1c, VNC 7001, noVNC 6181
 d_distro=chrome d_chrome_bin=google-chrome-canary d_chrome https://example.com
 d_distro=chrome d_exec node my-script.js     # a Puppeteer/Playwright script in the home
+cp chrome/search_screenshot.py "$d_home"/    # the example below
+d_distro=chrome d_exec python3 search_screenshot.py "rootless podman" -o search.png
 d_distro=chrome d_test 20 canary             # the usual checks
 ```
-The versions of Canary and the npm tools are whatever is current when the layer is
-built; `d_build_fresh` renews them.
+The versions of Canary, the npm tools, `uv` and `playwright` are whatever is current
+when the layer is built; `d_build_fresh` renews them.
+
+[`search_screenshot.py`](search_screenshot.py) is an example for Python: it opens a
+tab in the browser `d_chrome` started, does a web search (`--engine duckduckgo` |
+`bing` | `google`), saves the results page as a PNG (`--full-page` for all of it)
+and closes the tab. Where no results appear (a consent or robot check) it saves the
+page as it is and exits 1.
 
 ## Two things that shape everything
 
@@ -94,6 +106,8 @@ downloads.
   `playwright-core` connected over CDP and read the title, and `chrome-devtools-mcp`
   1.13 answered `initialize`, `tools/list` (33 tools) and a `list_pages` call over
   `podman exec -i`, with the flags `d_chrome_mcp` prints.
+- `search_screenshot.py` with the image's `python3` (uv venv) against Canary:
+  a DuckDuckGo search saved as PNG. Bing and Google not tried.
 - **Not tried:** the MCP server registered in a real Claude Code session,
   `playwright-mcp`, `lighthouse` and `ffmpeg` beyond `--version`, the `npx` variant
   on the other images, and any of this on the host.

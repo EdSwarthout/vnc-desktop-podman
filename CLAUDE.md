@@ -43,7 +43,11 @@ See `README.md` for user-facing setup.
   Ubuntu's apt cache) + `google-chrome-canary` (wrapper like stable's), Openbox +
   xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
   (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
-  `lighthouse`; `NODE_PATH` set). Instances `ccNc`, ports 7000+N / 6180+N.
+  `lighthouse`; `NODE_PATH` set), and Python's `playwright` in a venv made with
+  `uv`: `/opt/uv/bin/uv` and `/opt/venv`, both owned by the user and outside the
+  home volume, venv first on `PATH` and `VIRTUAL_ENV` set, so the user can
+  `uv pip install` without root. `chrome/search_screenshot.py` is a Python example
+  (web search → PNG via the DevTools port). Instances `ccNc`, ports 7000+N / 6180+N.
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp

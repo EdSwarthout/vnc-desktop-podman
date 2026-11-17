@@ -4,7 +4,8 @@ ARG BASE=localhost/u2604cc:chrome
 # Google Chrome stable, TigerVNC/noVNC, nested podman) plus Chrome Canary and tools for
 # driving a browser. The base is that locally built image, so d_build builds it first.
 # The build context is the repo root. One stage, tagged u2604chrome:canary:
-#   canary - chrome + Google Chrome Canary, Openbox, automation tools; session is an xterm
+#   canary - chrome + Google Chrome Canary, Openbox, automation tools (npm, and Python's
+#            playwright in a uv-managed venv of the user's); session is an xterm
 # See README.md here for how to drive the browsers (d_chrome, d_chrome_mcp).
 
 # ---------------------------------------------------------------------------------------
@@ -81,4 +82,22 @@ RUN printf '%s\n' '#!/bin/sh' \
         'exec xterm' \
         > /usr/local/bin/vnc-session
 
+# Python: uv and a virtual environment with playwright (the library; like the npm tools
+# it attaches to a running browser, see search_screenshot.py), both owned by the user
+# and outside the home (a volume, which would hide them): /opt/uv/bin/uv and /opt/venv.
+# The venv is first on PATH and is uv's default target (VIRTUAL_ENV), so `python3` and
+# `#!/usr/bin/env python3` scripts find playwright, and the user adds packages without
+# root: `uv pip install NAME` (lost when the instance is replaced: add them here to
+# keep them). The system's /usr/bin/python3 and its scripts are untouched.
+# UV_UNMANAGED_INSTALL: just the binaries, no changes to shell profiles and no receipt
+# in the home; to update uv, rebuild (d_build_fresh). UV_NO_CACHE: nothing left in the
+# build-time home, which the volume hides anyway.
+RUN install -d -o ${USERID} -g ${USERID} /opt/uv /opt/venv
 USER ${USERID}
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:/opt/uv/bin:${PATH}
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/opt/uv/bin sh \
+    && UV_NO_CACHE=1 uv venv --python /usr/bin/python3 /opt/venv \
+    && UV_NO_CACHE=1 uv pip install playwright \
+    && python3 -c 'import playwright' \
+    && rm -rf ~/.cache ~/.config/uv ~/.local/share/uv
