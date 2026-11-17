@@ -40,8 +40,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
    - `$d_dir/u2604cc` (Ubuntu) and `$d_dir/d13cc` (Debian) — prefixes for
      each instance's home dir (Ubuntu instance 1 → `$d_dir/u2604cc1`); set
      `d_homes0[debian]=…` etc. in `.env` to put them elsewhere.
-   - `$d_dir/apt-cache/archives` (Ubuntu) and `$d_dir/apt-cache-debian/archives`
-     (Debian) — downloaded `.deb`s, one cache per distro, meant to be shared
+   - `$d_dir/apt-cache-ubuntu/archives` and `$d_dir/apt-cache-debian/archives` — downloaded `.deb`s, one cache per distro, meant to be shared
      between machines over NFS so packages are downloaded once. That's why
      they're mounted directories rather than a podman build cache, which stays
      local to one machine. `d_build` mounts the distro's cache on
@@ -49,10 +48,10 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
      `d_run` mounts both, on `/var/cache/apt-ubuntu` and
      `/var/cache/apt-debian`, so a build inside an instance uses the right one
      for either distro (a missing one is skipped with a note). Create them:
-     `mkdir -p "$d_dir"/apt-cache{,-debian}/archives`. On the NFS server,
+     `mkdir -p "$d_dir"/apt-cache-{ubuntu,debian}/archives`. On the NFS server,
      export these `archives` directories, e.g.:
      ```
-     /mnt/hwd23data/sw/docker/apt-cache/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
+     /mnt/hwd23data/sw/docker/apt-cache-ubuntu/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
      /mnt/hwd23data/sw/docker/apt-cache-debian/archives hwd4(rw,sync,all_squash,anonuid=1001,anongid=1001)
      ```
      On a client, mount them at the same paths under that client's `$d_dir`,
@@ -146,7 +145,7 @@ d_distro=debian d_target=gnome d_run     # cc5d, home $d_dir/d13cc5
 Debian instances have their own names, homes and ports (see [Run an
 instance](#run-an-instance)), so Debian and Ubuntu instance 5 can run side by
 side. Its `.deb`s go to their own cache,
-`$d_dir/apt-cache-debian/archives` (create and NFS-export it like Ubuntu's),
+`$d_dir/apt-cache-debian/archives` (create and NFS-export it like Ubuntu's, `$d_dir/apt-cache-ubuntu/archives`),
 because both distros have files with the same name but different contents.
 
 Debian's `gnome` is **GNOME Shell**, unlike Ubuntu's: GNOME 48 still has an X11

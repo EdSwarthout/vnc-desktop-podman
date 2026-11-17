@@ -75,8 +75,8 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **Claude Code** is installed by the user at runtime via `install_claude`
   (native installer → `~/.local/bin`, self-updating). Not baked into the image.
 - **Shared apt caches**, one per distro (same file names, different
-  contents), NFS-shared between machines: host `$d_dir/apt-cache/archives`
-  (Ubuntu) and `$d_dir/apt-cache-debian/archives` (Debian), or
+  contents), NFS-shared between machines: host `$d_dir/apt-cache-<distro>/archives`
+  (`apt-cache-ubuntu`, `apt-cache-debian`), or
   `d_aptcaches[<distro>]` from `.env`. Each image's apt keeps `.deb`s in
   `/var/cache/apt-<distro>` (`Dir::Cache::archives`, apt.conf.d
   `vnc-desktop-archives`; apt creates the dir when nothing's mounted).
