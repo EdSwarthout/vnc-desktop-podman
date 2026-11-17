@@ -173,6 +173,7 @@ ENV DISPLAY=:1 \
     VNC_RESOLUTION=1440x900
 
 # dbus-x11: xstartup runs the session under dbus-launch (desktops and Chrome use the bus)
+# xdotool: keys, clicks and window queries for tests (env.rc's d_test, tests/lock.sh)
 # keep list sorted
 RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus-x11 \
@@ -181,6 +182,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tigervnc-tools \
     tigervnc-viewer \
     websockify \
+    xdotool \
     xterm \
     && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin

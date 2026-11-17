@@ -15,9 +15,9 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `debian/Containerfile` | Debian image stages `base` → `vnc` → `chrome` → `gnome` (see [Debian](#debian)) |
 | `start.sh`      | Container entrypoint (both distros): first-boot setup, starts the VNC session if the stage has one |
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot (both distros) |
-| `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot) |
+| `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
-| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, …)    |
+| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
 | `.env`          | Your VNC password and local settings (not in git)             |
 | `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
 
@@ -334,6 +334,28 @@ d_all_cmd= d_all 11                                   # just build and run
 desktop stage, runs it on a new home as instance N (which must be unused; it is
 removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 
+**Test a stage:** `d_test N [STAGE...]` builds each stage (default: all of
+`$d_distro`), runs it on a new home as instance N (which must be unused; it is
+removed again afterwards, unless `d_test_keep=1`) and prints `ok`/`FAIL` per check:
+the instance comes up, nested podman works (`tests/tests.sh`), no `VNC_PASSWORD` in
+`podman inspect` or any process, no `sudo`, the apt cache mounts, noVNC answers on
+IPv4 and IPv6, a screenshot, the screen can't be locked (`tests/lock.sh`: it sends
+every lock request it knows, then checks that typing still reaches a window),
+ending the session stops the container and `podman start` brings it back. Build
+logs, check output and screenshots go to `$d_test_dir` (default `/tmp/d_test`).
+```bash
+d_test 20 gnome                    # Ubuntu's gnome on throwaway instance 20
+d_distro=debian d_test 20          # every Debian stage
+```
+
+**Run a program in an instance:** `d_exec COMMAND...` is `podman exec` in the
+selected instance without the ambient capabilities `--cap-add` would give it (GTK
+programs fail to load icons with them); `d_exec -s` adds the desktop session's
+D-Bus environment, and `-d` detaches: `d_exec -s -d gnome-terminal`.
+
+**Remove an instance:** `d_rm [N]` removes the container **and deletes its home
+directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.
+
 **Rebuild after editing the Containerfile:** `d_build`, then `d_select N` and
 `d_run` for each instance. Home dirs are untouched.
 
@@ -341,4 +363,6 @@ removed again afterwards) and saves `docs/<distro>/<stage>.png`.
 re-run `apt-get upgrade` or re-download Chrome unless the Containerfile changed.
 `d_build_fresh` pulls a newer base image if there is one and rebuilds every layer
 (`--pull=newer --no-cache`); then `d_run` each instance. Both pass extra
-arguments through to `podman build`.
+arguments through to `podman build`, and end with a summary: the time taken and,
+per apt step that ran, how much apt downloaded of what it needed (`0 B/105 MB`:
+all of it came from the shared cache).

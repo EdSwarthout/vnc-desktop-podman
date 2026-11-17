@@ -30,10 +30,20 @@ See `README.md` for user-facing setup.
   `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`, `d_logs`,
   `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, then
   `eval "$d_all_cmd"` in the background per instance, default `d_vnc`), `d_screenshots N [STAGE...]` (retake
-  `docs/<distro>/<stage>.png` on a throwaway instance N).
+  `docs/<distro>/<stage>.png` on a throwaway instance N), `d_test N [STAGE...]`
+  (build, run on a throwaway instance N, check, remove: see "Testing a change"),
+  `d_exec [-s] [-d] CMD` (`podman exec` minus ambient caps; `-s`: with the
+  session's D-Bus/XDG environment), `d_rm [-f] [N]` (container **and home**; asks
+  unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
+  apt step that ran, `0 B/…` = all from the shared cache). `_d_wait_ready` waits
+  for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out
   with `podman cp` and look at it to check a desktop by script.
+   `tests/lock.sh` — sends every lock request it knows (screensaver D-Bus names,
+  desktops' lock commands, Super+L, Ctrl+Alt+L) and after each types into its own
+  xterm with `xdotool` (XTEST, which a locker's grab would divert): FAIL if the
+  text doesn't arrive. Needs the session bus (`d_exec -s`); throwaway instances only.
 - `docs/` — `README.md` gallery with one screenshot per stage of the desktop
   on a fresh home (`ubuntu/<stage>.png`, `debian/<stage>.png`); retake a stage's picture when its initial
   look changes (`[d_distro=debian] d_screenshots N <stage>`).
@@ -216,6 +226,12 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 ## Testing a change from inside an instance
 You are `ed` with **no root** here (`sudo` only runs `nested-subids`), and the
 image has no apt lists. Everything below uses the nested podman.
+- **All of it in one go**: `source ./env.rc; [d_distro=debian] d_test N <stage>`
+  (N unused, e.g. 1): builds, runs `<this instance>_N<letter>` on a new home, runs
+  the checks below (ok/FAIL lines, non-zero status on a FAIL) and removes it again.
+  Logs and the screenshot are in `/tmp/d_test/<instance>-<stage>.{build.log,log,png}`:
+  Read the PNG. `d_test_keep=1` leaves the instance up for a closer look (then
+  `d_rm -f N`). The steps by hand:
 - **Build**: `source ./env.rc; [d_distro=debian] d_target=<stage> d_build > LOG 2>&1` — takes
   minutes (use a long timeout, log to a file, check the exit status). Changing
   `start.sh` or anything in `base` rebuilds every later stage.
@@ -226,20 +242,21 @@ image has no apt lists. Everything below uses the nested podman.
   needed. No `.env` is needed: it gets a copy of this instance's VNC password.
 - **Look at it**: `podman exec cc1u_1u /home/ed/tests/screenshot.sh /home/ed/s.png`,
   then Read `~/Containers/cc1u_1u/s.png`. Give a desktop 15-40 s to come up first.
-  Start GUI apps with `podman exec -d cc1u_1u <app>` (DISPLAY is already set).
+  Start GUI apps with `d_exec -s -d <app>` (DISPLAY is already set; plain
+  `podman exec -d` has ambient caps and no session bus).
 - **Root for experiments**: `podman exec -u root cc1u_1u sh -c 'apt-get update &&
-  apt-get install -y …'` (try packages there before editing the Containerfile;
-  `xdotool` is handy for keys/clicks). To query apt without an instance:
+  apt-get install -y …'` (try packages there before editing the Containerfile).
+  `xdotool` (keys, clicks, window queries) is in every stage from `vnc` on. To query apt without an instance:
   `podman run --rm --user root u2604cc:chrome sh -c 'apt-get update -qq; apt-cache policy PKG'`.
 - **Checks worth repeating** for any stage: `tests/tests.sh` inside it (4 ok);
   `podman inspect` and process environments contain no `VNC_PASSWORD`;
   `sudo -n true` is refused; noVNC answers on `http://127.0.0.1:<6080+N, Debian 6130+N>/vnc.html`
   and `[::1]`; ending the session stops the container (`podman ps -a` shows
   Exited, log says "vncserver exited") and `podman start` brings it back.
-- **Clean up** what you started: `podman rm -f -t 2 cc1u_1u` then
-  `podman unshare rm -rf ~/Containers/cc1u_1u` (plain `rm` fails on sub-ID-owned
-  files). `podman rm` sometimes prints an `openByHandleAt` error about exec
-  sessions; run it again and check `podman ps -a`.
+- **Clean up** what you started: `d_rm -f N` (= `podman rm -f -t 2 cc1u_1u`, retried
+  because it sometimes fails once with an `openByHandleAt` error about exec
+  sessions, then `podman unshare rm -rf ~/Containers/cc1u_1u`; plain `rm` fails on
+  sub-ID-owned files). Check `podman ps -a`.
 - **Not testable here**: the real host (NFS apt cache, host paths, other UIDs).
   Say so instead of guessing; the user tests on the host.
 
@@ -256,7 +273,8 @@ image has no apt lists. Everything below uses the nested podman.
    `/usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override` +
    `glib-compile-schemas --strict`, as in `gnome`/`mate`/`cinnamon`.
 4. **Screen lock must be impossible** (no password to unlock): test an explicit
-   lock request and the keyboard shortcut, not just the settings.
+   lock request and the keyboard shortcut, not just the settings: `tests/lock.sh`
+   (run by `d_test`); add the desktop's own lock command or D-Bus name to it.
 5. Log out from the desktop must end the session (so the container stops), or
    provide a replacement and document it.
 6. A screenshot tool that can save to a file without a dialog (`scrot` if
