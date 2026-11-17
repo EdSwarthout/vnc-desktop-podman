@@ -45,6 +45,12 @@ It starts in the Activities overview, as GNOME does.
 ## `vnc` (and `chromium`): xterm
 ![Arch Linux vnc stage: a bare xterm](archlinux/vnc.png)
 
+## `chromium`: Chromium
+The stage comes up like `vnc`; this is after `d_chrome_bin=chromium d_chrome`, which
+opens `chrome://version/`. There is no window manager in this stage, so the
+window was moved next to the xterm with `xdotool` for the picture.
+![Arch Linux chromium stage: the xterm and Chromium showing chrome://version](archlinux/chromium.png)
+
 ## `openbox`: Openbox
 One xterm; the menu (Terminal, Chromium, window list, Exit) is a right-click on the background.
 ![Arch Linux openbox stage](archlinux/openbox.png)
@@ -59,3 +65,5 @@ home, waits for the desktop to settle, runs `tests/screenshot.sh` inside and
 saves the result as `docs/<distro>/<stage>.png`, then removes the container and that
 home. N must be an unused instance number. The `vnc` stage has no screenshot
 tool, so `scrot` is installed in its throwaway container for the picture.
+`archlinux/chromium.png` isn't one of these (it shows a started browser, not the
+stage as it comes up), so it was taken by hand, as described above.
