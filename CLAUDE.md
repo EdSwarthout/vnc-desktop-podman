@@ -73,7 +73,7 @@ See `README.md` for user-facing setup.
   xterm with `xdotool` (XTEST, which a locker's grab would divert): FAIL if the
   text doesn't arrive. Needs the session bus (`d_exec -s`); throwaway instances only.
 - `docs/` — `README.md` gallery with one screenshot per stage of the desktop
-  on a fresh home (`ubuntu/<stage>.png`, `debian/<stage>.png`); retake a stage's picture when its initial
+  on a fresh home (`ubuntu/<stage>.png`, `debian/<stage>.png`, `archlinux/<stage>.png`); retake a stage's picture when its initial
   look changes (`[d_distro=debian] d_screenshots N <stage>`).
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.

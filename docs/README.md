@@ -5,7 +5,8 @@ Each stage's desktop as it first comes up: a new home dir, nothing opened,
 contains.
 
 `base` is headless, so it has no screenshot. `chrome` starts with the same
-bare `xterm` as `vnc`. Ubuntu's stages first, then [Debian's](#debian).
+bare `xterm` as `vnc`. Ubuntu's stages first, then [Debian's](#debian) and
+[Arch Linux's](#arch-linux).
 
 # Ubuntu
 
@@ -39,10 +40,20 @@ bare `xterm` as `vnc`. Ubuntu's stages first, then [Debian's](#debian).
 It starts in the Activities overview, as GNOME does.
 ![Debian gnome stage](debian/gnome.png)
 
+# Arch Linux
+
+## `vnc`: xterm
+![Arch Linux vnc stage: a bare xterm](archlinux/vnc.png)
+
+## `openbox`: Openbox
+One xterm; the menu (Terminal, window list, Exit) is a right-click on the background.
+![Arch Linux openbox stage](archlinux/openbox.png)
+
 ## Retaking them
 
 `d_screenshots N` (from `env.rc`) retakes them all for `$d_distro`
-(`d_distro=debian d_screenshots N` for Debian's); `d_screenshots N kde` just
+(`d_distro=debian d_screenshots N` for Debian's, `d_distro=archlinux` for Arch
+Linux's); `d_screenshots N kde` just
 that one. For each stage it builds the image, runs it on instance N with a new
 home, waits for the desktop to settle, runs `tests/screenshot.sh` inside and
 saves the result as `docs/<distro>/<stage>.png`, then removes the container and that
