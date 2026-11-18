@@ -42,7 +42,12 @@ o_screenshot /tmp/s.png; o_exec CMD…; o_logs; o_rm [-f] 1
 **Super key**: Omarchy is driven with Super (Super+Space menu, Super+Return terminal,
 …). In TigerVNC's viewer, press **Ctrl+Alt+G** to toggle keyboard capture. Otherwise
 the local desktop may take Super chords (e.g. Super+Space) before they reach the
-session. Super chords sent by the Claude in Chrome extension through noVNC didn't arrive
+session. **Works nested too** (checked 2026-11-17): a host TigerVNC viewer on the
+outer instance (cc8u `:1`) with keyboard grab on, and in that desktop a `vncviewer`
+on the Omarchy container (`o_vnc`). Super chords reach Omarchy through both viewers
+(only the outer one needs the grab), **except Super+Space**, which doesn't arrive that way
+(something on the outer instance's side keeps it). Open the menu another way meanwhile:
+the Omarchy logo in the bar, or `o_exec omarchy-menu toggle root`. Super chords sent by the Claude in Chrome extension through noVNC didn't arrive
 (meta+space, meta+Return, or noVNC's Windows-key toggle); the extension is fine for
 looking and clicking.
 
@@ -113,6 +118,7 @@ instance created with that device.
   units, NetworkManager, PipeWire, power-profiles-daemon and so on are untested. They
   probably fail quietly.
 - A bare Enter doesn't dismiss the lock screen (any character + Enter does).
-- Testing from a desktop inside an instance: that desktop may take Super+Space itself
-  (use TigerVNC's Ctrl+Alt+G keyboard capture, or send keys straight over RFB).
+- Testing from a desktop inside an instance: that desktop may take Super+Space itself.
+  TigerVNC's Ctrl+Alt+G keyboard grab on the outer viewer passes every Super chord but
+  Super+Space (see "Super key" above); for scripted checks, send keys straight over RFB.
 - Only one instance at a time per vkms card (single DRM master).
