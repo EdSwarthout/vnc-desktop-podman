@@ -5,6 +5,7 @@
 #   rootfs  - the installed Omarchy system + user, pacman usable; headless
 #   wayvnc  - rootfs + wayvnc; a bare Hyprland (own minimal config, foot) on a DRM
 #             device (vkms card passed with --device), shown by wayvnc on port 5900
+#             and noVNC (websockify) on 6080
 #   omarchy - wayvnc + Omarchy's own desktop (its Hyprland config and Quickshell shell),
 #             with shims for the systemd/uwsm pieces it expects
 
@@ -68,11 +69,23 @@ RUN OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm --needed \
     && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
     && rm -rf /var/lib/pacman/sync/*
 
+# noVNC (browser client) for wayvnc, as in ../archlinux/Containerfile: websockify from
+# PyPI in a venv of its own, noVNC's release tarball in /usr/share/novnc.
+ARG NOVNC_VERSION=1.7.0
+ARG WEBSOCKIFY_VERSION=0.13.0
+RUN python -m venv /opt/websockify \
+    && /opt/websockify/bin/pip install --no-cache-dir websockify==${WEBSOCKIFY_VERSION} \
+    && ln -s /opt/websockify/bin/websockify /usr/local/bin/websockify \
+    && mkdir -p /usr/share/novnc \
+    && curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz \
+       | tar -xz -C /usr/share/novnc --strip-components=1 \
+    && test -f /usr/share/novnc/vnc.html
+
 COPY --chmod=644 hyprland-vnc.conf /etc/omarchy-vnc/hyprland.conf
 COPY --chmod=755 omarchy-session /usr/local/bin/omarchy-session
 
 USER ${USERID}
-EXPOSE 5900
+EXPOSE 5900 6080
 CMD ["/usr/local/bin/omarchy-session"]
 
 # ---------------------------------------------------------------------------------------
