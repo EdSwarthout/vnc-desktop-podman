@@ -1,0 +1,18 @@
+#!/bin/bash
+# omarchy stage: no systemd user manager, so `uwsm-app [opts] [--] CMD…` (Omarchy's
+# launcher for everything) starts CMD detached; -T (or being called uwsm-terminal*)
+# runs it in a terminal (xdg-terminal-exec), as uwsm does.
+term=
+case ${0##*/} in uwsm-terminal*) term=1;; esac
+while [ $# -gt 0 ]; do
+    case $1 in
+        --) shift; break;;
+        -T) term=1; shift;;
+        -[satud]) shift 2;;
+        -*) shift;;
+        *) break;;
+    esac
+done
+[ $# -gt 0 ] || exit 0
+[ -n "$term" ] && set -- xdg-terminal-exec "$@"
+setsid -f "$@" >/dev/null 2>&1 </dev/null

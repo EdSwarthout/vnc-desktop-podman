@@ -1,0 +1,101 @@
+# Omarchy (https://omarchy.org/, Arch + Hyprland) in rootless podman, headless, over
+# wayvnc. Standalone experiment: see README.md. Build context is this directory.
+# rootfs.tar comes from the ISO's omarchy-root.img.zst via ./extract.sh.
+# Stages (omarchy/env.rc: o_build STAGE, tagged omarchy:<stage>):
+#   rootfs  - the installed Omarchy system + user, pacman usable; headless
+#   wayvnc  - rootfs + wayvnc; a bare Hyprland (own minimal config, foot) on a DRM
+#             device (vkms card passed with --device), shown by wayvnc on port 5900
+#   omarchy - wayvnc + Omarchy's own desktop (its Hyprland config and Quickshell shell),
+#             with shims for the systemd/uwsm pieces it expects
+
+# ---------------------------------------------------------------------------------------
+FROM scratch AS rootfs
+
+ARG USERID=ed
+ARG USER_UID=1001
+
+ADD rootfs.tar /
+
+ENV LANG=C.UTF-8 \
+    USERID=${USERID}
+
+# btrfs restore keeps owners, modes and xattrs (file caps), but drops setuid/setgid
+# bits (sudo, su, …): put back every special mode recorded in pacman's per-package
+# mtree files. Files no package owns can't be fixed this way.
+RUN for m in /var/lib/pacman/local/*/mtree; do zcat "$m"; done \
+    | awk '$1 !~ /^\// && match($0, / mode=[0-7]+/) { \
+               m = substr($0, RSTART + 6, RLENGTH - 6); \
+               if (length(m) == 4 && m !~ /^0/) print m, $1 }' \
+    | while read -r mode path; do [ -e "/$path" ] && chmod "$mode" "/$path"; done \
+    && [ -u /usr/bin/sudo ] && [ -u /usr/bin/su ]
+
+# pacman: Omarchy's "stable" channel, as its installer sets it up (the image's own
+# pacman.conf lacks the [omarchy] repo, and its mirrorlist is all commented out): the
+# [omarchy] repo plus a dated Arch snapshot mirror, so Omarchy's pinned packages (e.g.
+# omarchy-hyprland-titlebars needs hyprland=<exact version>) match; Arch's live mirrors
+# break that on -Syu. Then, as in ../archlinux/Containerfile, the shared package cache
+# (CacheDir in the mount o_build gives, no DownloadUser) and a keyring (the image has
+# none; --populate takes Arch's and omarchy-keyring's).
+RUN P=/usr/share/omarchy/default/pacman \
+    && cp $P/pacman-stable.conf /etc/pacman.conf \
+    && cp $P/mirrorlist-stable /etc/pacman.d/mirrorlist \
+    && grep -q '^DownloadUser' /etc/pacman.conf && grep -q '^\[omarchy\]' /etc/pacman.conf \
+    && sed -i -e 's/^DownloadUser/#&/' \
+              -e 's|^\[options\]$|&\nCacheDir = /var/cache/apt-archlinux/|' /etc/pacman.conf \
+    && grep -q '^CacheDir = /var/cache/apt-archlinux/$' /etc/pacman.conf \
+    && pacman-key --init && pacman-key --populate
+
+# The user, with a fixed UID (keep-id). video/render: the DRM device. No sudo.
+RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
+    && { [ -z "$old" ] || userdel -r "$old"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" -G video,render,input ${USERID}
+
+USER ${USERID}
+WORKDIR /home/${USERID}
+CMD ["sleep", "infinity"]
+
+# ---------------------------------------------------------------------------------------
+# Stage "wayvnc": bare Hyprland on the DRM device + wayvnc
+FROM rootfs AS wayvnc
+USER root
+
+ENV VNC_RESOLUTION=1440x900
+
+# OMARCHY_ALLOW_DIRECT_PACMAN: Omarchy's pre-transaction hook otherwise refuses a
+# pacman -Syu that doesn't come from `omarchy update`.
+RUN OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm --needed \
+    wayvnc \
+    && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
+    && rm -rf /var/lib/pacman/sync/*
+
+COPY --chmod=644 hyprland-vnc.conf /etc/omarchy-vnc/hyprland.conf
+COPY --chmod=755 omarchy-session /usr/local/bin/omarchy-session
+
+USER ${USERID}
+EXPOSE 5900
+CMD ["/usr/local/bin/omarchy-session"]
+
+# ---------------------------------------------------------------------------------------
+# Stage "omarchy": Omarchy's desktop: its Hyprland config (the home's, from /etc/skel)
+# and its Quickshell shell (bar, launcher, menus, idle, lock)
+FROM wayvnc AS omarchy
+USER root
+
+# No systemd here, but Omarchy runs everything through uwsm-app (systemd user units),
+# logs through systemd-cat, and logs out/powers off with uwsm stop/systemctl. Shims in
+# /usr/local/bin (ahead of /usr/bin in PATH) start apps directly and turn Log Out,
+# Restart and Shutdown into "exit Hyprland", which stops the container.
+COPY --chmod=755 shims/ /usr/local/bin/
+
+# The lock screen (Quickshell's lock plugin) authenticates with PAM service
+# omarchy-lock-password, which Omarchy's installer writes (omarchy-apply-lock, as root);
+# without it PAM's "other" denies everything and a locked session can't be unlocked.
+# The user has no password, so the service accepts anyone: a lock (Super+Ctrl+L, idle)
+# goes away on Enter.
+RUN printf '%s\n' '#%PAM-1.0' \
+        'auth     sufficient pam_permit.so' \
+        'account  sufficient pam_permit.so' \
+        > /etc/pam.d/omarchy-lock-password
+
+ENV OMARCHY_DESKTOP=1
+USER ${USERID}

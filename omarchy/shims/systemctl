@@ -1,0 +1,13 @@
+#!/bin/bash
+# omarchy stage: no systemd. poweroff/reboot/halt (Omarchy's power menu) end Hyprland,
+# and with it the container; suspend/hibernate do nothing; the rest goes to the real
+# systemctl, which fails quietly without a manager.
+for a in "$@"; do
+    case $a in
+        poweroff|reboot|halt|kexec|soft-reboot) exec hypr-exit;;
+        suspend|hibernate|hybrid-sleep|suspend-then-hibernate) exit 0;;
+        -*) ;;
+        *) break;;
+    esac
+done
+exec /usr/bin/systemctl "$@" 2>/dev/null
