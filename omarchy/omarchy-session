@@ -76,7 +76,16 @@ fi
 wayvnc ${WAYVNC_OPTS--r} -o "$out" 0.0.0.0 5900 &
 vnc=$!
 
-wait -n "$hypr" "$vnc"
-echo "$( kill -0 "$hypr" 2>/dev/null && echo wayvnc || echo Hyprland) exited"
-kill "$hypr" "$vnc" 2>/dev/null
+# noVNC: http://<host>:<published 6080>/vnc.html; [::] takes IPv4 too (as in start.sh)
+listen=6080
+if [ -n "$(cat /proc/net/if_inet6 2>/dev/null)" ] && [ "$(cat /proc/sys/net/ipv6/bindv6only 2>/dev/null)" = 0 ]; then
+    listen='[::]:6080'
+fi
+websockify --web=/usr/share/novnc "$listen" localhost:5900 &
+web=$!
+
+wait -n -p done "$hypr" "$vnc" "$web"
+case $done in "$hypr") w=Hyprland;; "$vnc") w=wayvnc;; *) w=websockify;; esac
+echo "$w exited"
+kill "$hypr" "$vnc" "$web" 2>/dev/null
 wait

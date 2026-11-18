@@ -14,7 +14,7 @@ and are shown and driven over **wayvnc** (no password, port 7100+N).
 | Stage | What | Screenshot |
 |---|---|---|
 | `rootfs` | the installed Omarchy system + user, pacman usable; headless | |
-| `wayvnc` | + wayvnc; bare Hyprland (`hyprland-vnc.conf`) with a foot terminal | `wayvnc.png` |
+| `wayvnc` | + wayvnc and noVNC (websockify, port 6280+N); bare Hyprland (`hyprland-vnc.conf`) with a foot terminal | `wayvnc.png` |
 | `omarchy` | + Omarchy's own desktop from the home's config; systemd/uwsm shims | `omarchy.png` |
 
 Checked:
@@ -35,13 +35,16 @@ source omarchy/env.rc
 o_build omarchy                        # builds rootfs -> wayvnc -> omarchy
 o_target=omarchy o_run 1               # container ccNo (nested: <instance>_No), home omarchyN
 o_vnc                                  # or any VNC client on <host>:7101
+o_novnc                                # browser: http://<host>:6281/vnc.html?autoconnect=1
 o_screenshot /tmp/s.png; o_exec CMD…; o_logs; o_rm [-f] 1
 ```
 
 **Super key**: Omarchy is driven with Super (Super+Space menu, Super+Return terminal,
 …). In TigerVNC's viewer, press **Ctrl+Alt+G** to toggle keyboard capture. Otherwise
 the local desktop may take Super chords (e.g. Super+Space) before they reach the
-session.
+session. Super chords sent by the Claude in Chrome extension through noVNC didn't arrive
+(meta+space, meta+Return, or noVNC's Windows-key toggle); the extension is fine for
+looking and clicking.
 
 The ISO must be loop-mounted at `omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`), and
 `/dev/dri/<vkms card>` must be visible where `o_run` runs. A nested run needs the outer
@@ -101,7 +104,7 @@ instance created with that device.
 
 ## Not done / open
 
-- No VNC password (fine for now); no noVNC/websockify.
+- No VNC password (fine for now), so noVNC connects with `?autoconnect=1` and no prompt.
 - Nested podman, Claude Code (`install_claude`), the shared `start.sh`/`nested-subids`:
   not added.
 - Image size: the rootfs is Omarchy's full install (LibreOffice, Chromium, Electron, fonts…),
