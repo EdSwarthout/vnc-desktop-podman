@@ -1,0 +1,4 @@
+#!/bin/bash
+# End the Hyprland session (and with it the container): a Lua config (Omarchy's) only
+# takes Lua dispatchers, a hyprlang one only `exit`.
+hyprctl dispatch 'hl.dsp.exit()' | grep -qx ok || exec hyprctl dispatch exit

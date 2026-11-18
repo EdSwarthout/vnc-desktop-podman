@@ -1,0 +1,8 @@
+#!/bin/bash
+# omarchy stage: `uwsm stop` (Omarchy's Log Out) ends Hyprland, and with it the
+# container; anything else goes to the real uwsm (which mostly needs systemd).
+case ${1:-} in
+    stop) exec hypr-exit;;
+    check) [ "${2:-}" = is-active ] && exit 0;;
+esac
+exec /usr/bin/uwsm "$@"

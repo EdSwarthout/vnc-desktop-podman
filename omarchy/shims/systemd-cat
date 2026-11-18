@@ -1,0 +1,16 @@
+#!/bin/bash
+# omarchy stage: no journald; `systemd-cat [opts] [--] CMD…` runs CMD with its output
+# on the session's (podman logs), prefixed by the -t tag.
+tag=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --) shift; break;;
+        -t) tag=$2; shift 2;;
+        --identifier=*) tag=${1#*=}; shift;;
+        -p|--priority|--stderr-priority|--level-prefix) shift 2;;
+        -*) shift;;
+        *) break;;
+    esac
+done
+[ $# -gt 0 ] || exec cat
+exec "$@" > >(sed -u "s/^/${tag:+$tag: }/") 2>&1

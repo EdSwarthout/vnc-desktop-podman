@@ -1,0 +1,22 @@
+#!/bin/bash
+# omarchy stage: no systemd. `systemd-run [--user] [opts] CMD…` runs CMD directly:
+# detached, or in the foreground with --wait/--scope/--pipe; --on-active=SECONDS
+# delays it; calendar timers (--on-calendar) are dropped.
+fg= delay=
+while [ $# -gt 0 ]; do
+    case $1 in
+        --) shift; break;;
+        --wait|--scope|--pipe|-P|-t|--pty) fg=1; shift;;
+        --on-active=*) delay=${1#*=}; shift;;
+        --on-calendar=*|--on-boot=*|--on-startup=*|--on-unit-active=*|--on-unit-inactive=*) exit 0;;
+        --setenv=*=*) export "${1#--setenv=}"; shift;;
+        -[pEuM]|--property|--setenv|--unit|--description|--slice|--uid|--gid|--working-directory|--timer-property)
+            shift 2;;
+        -*) shift;;
+        *) break;;
+    esac
+done
+[ $# -gt 0 ] || exit 0
+[ -n "$delay" ] && set -- sh -c 'sleep "$0" && exec "$@"' "${delay%s}" "$@"
+if [ -n "$fg" ]; then exec "$@"; fi
+setsid -f "$@" >/dev/null 2>&1 </dev/null

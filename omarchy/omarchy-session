@@ -1,0 +1,82 @@
+#!/bin/bash
+# Entrypoint of the wayvnc stage: Hyprland on a DRM device without logind/seatd
+# (libseat's noop backend opens the device directly), then wayvnc on its output.
+# Exits when either one does, so the container stops.
+set -u
+export XDG_RUNTIME_DIR=/tmp/xdg-$(id -u)
+mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Hyprland
+export LIBSEAT_BACKEND=${LIBSEAT_BACKEND:-noop}
+export AQ_DRM_DEVICES=${AQ_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}
+unset WAYLAND_DISPLAY DISPLAY HYPRLAND_INSTANCE_SIGNATURE
+[ -n "$AQ_DRM_DEVICES" ] || { echo "no /dev/dri/card*: run with --device /dev/dri/cardN" >&2; exit 1; }
+
+# omarchy stage (OMARCHY_DESKTOP=1): Omarchy's own config from the home, which gets
+# /etc/skel's files on its first boot (the home is a volume, so useradd's copy is
+# hidden). Idle starts as "stay awake" (Omarchy's toggle, Super+Ctrl+I), so the
+# session doesn't idle into the lock screen (which unlocks on Enter anyway: see
+# /etc/pam.d/omarchy-lock-password).
+cfg=${OMARCHY_HYPR_CONFIG:-/etc/omarchy-vnc/hyprland.conf}
+if [ "${OMARCHY_DESKTOP:-}" = 1 ]; then
+    export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+    if [ ! -e ~/.config/hypr/hyprland.lua ]; then
+        cp -an /etc/skel/. ~/
+        # the output's mode follows $VNC_RESOLUTION (vkms "prefers" 1024x768), and GTK's
+        # X11 scale is 1 (Omarchy's 2 is for HiDPI laptops)
+        m=~/.config/hypr/monitors.lua
+        grep -q 'mode = "preferred"' $m && grep -q '^local omarchy_gdk_scale = 2$' $m \
+            && sed -i -e '/^hl\.monitor/s/mode = "preferred"/mode = os.getenv("VNC_RESOLUTION") or "preferred"/' \
+                      -e 's/^local omarchy_gdk_scale = 2$/local omarchy_gdk_scale = 1/' $m \
+            || echo "omarchy-session: $m has changed, mode/scale not set" >&2
+        mkdir -p ~/.local/state/omarchy/indicators
+        touch ~/.local/state/omarchy/indicators/stay-awake
+    fi
+    # Omarchy hides the pointer on any key press until it moves; over VNC the drawn
+    # pointer (wayvnc -r) is the only one, so it vanished on e.g. tapping Super. The
+    # home's looknfeel.lua loads after Omarchy's defaults; leave it alone if it
+    # mentions the setting already (also existing homes, not only new ones).
+    l=~/.config/hypr/looknfeel.lua
+    [ -f "$l" ] && ! grep -q hide_on_key_press "$l" && printf '%s\n' '' \
+        '-- vnc-desktop (omarchy-session): keep the pointer visible over VNC' \
+        'hl.config({ cursor = { hide_on_key_press = false } })' >> "$l"
+    cfg=${OMARCHY_HYPR_CONFIG:-$HOME/.config/hypr/hyprland.lua}
+fi
+
+# session bus, address in the environment for everything started below (and for
+# podman exec, via /proc/<pid>/environ)
+eval "$(dbus-launch --sh-syntax)"
+
+Hyprland --config "$cfg" &
+hypr=$!
+
+sock=
+for _ in $(seq 150); do
+    sock=$(ls "$XDG_RUNTIME_DIR"/hypr/*/.socket.sock 2>/dev/null | head -1)
+    [ -n "$sock" ] && break
+    kill -0 "$hypr" 2>/dev/null || { echo "Hyprland exited" >&2; exit 1; }
+    sleep 0.2
+done
+[ -n "$sock" ] || { echo "Hyprland socket didn't appear" >&2; kill "$hypr"; exit 1; }
+HYPRLAND_INSTANCE_SIGNATURE=$(basename "$(dirname "$sock")")
+export HYPRLAND_INSTANCE_SIGNATURE
+export WAYLAND_DISPLAY=$(cd "$XDG_RUNTIME_DIR" && ls wayland-* | grep -v lock | head -1)
+
+out=$(hyprctl monitors -j | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)
+echo "Hyprland: $HYPRLAND_INSTANCE_SIGNATURE, $WAYLAND_DISPLAY, output $out"
+# the output's mode: hyprlang configs take `keyword`, Lua ones (Omarchy's) only `eval`
+if [ -n "${VNC_RESOLUTION:-}" ]; then
+    case $cfg in
+        *.lua) hyprctl eval "hl.monitor({ output = \"$out\", mode = \"$VNC_RESOLUTION\", position = \"0x0\", scale = 1 })";;
+        *) hyprctl keyword monitor "$out,$VNC_RESOLUTION,0x0,1";;
+    esac
+fi
+
+# -r: draw the pointer into the frames (the hardware cursor plane isn't captured, so
+# a VNC client showed none); WAYVNC_OPTS= (empty) turns it off
+wayvnc ${WAYVNC_OPTS--r} -o "$out" 0.0.0.0 5900 &
+vnc=$!
+
+wait -n "$hypr" "$vnc"
+echo "$( kill -0 "$hypr" 2>/dev/null && echo wayvnc || echo Hyprland) exited"
+kill "$hypr" "$vnc" 2>/dev/null
+wait
