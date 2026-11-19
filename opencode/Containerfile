@@ -1,0 +1,67 @@
+ARG BASE=localhost/u2604cc:lxqt
+
+# OpenCode (d_distro=opencode, https://opencode.ai): Ubuntu's lxqt stage
+# (../ubuntu/Containerfile: LXQt, Google Chrome, TigerVNC/noVNC, nested podman) plus the
+# OpenCode desktop app and its terminal UI. The base is that locally built image, so
+# d_build builds it first. The build context is the repo root. One stage, tagged
+# u2604opencode:lxqt:
+#   lxqt - lxqt + OpenCode Desktop (Electron) and the opencode CLI; session is LXQt
+# See README.md here.
+
+# ---------------------------------------------------------------------------------------
+# Stage "lxqt": Ubuntu's lxqt + OpenCode
+FROM ${BASE} AS lxqt
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# OpenCode Desktop: the .deb from opencode.ai's "latest" URL (GitHub's "latest" release
+# can be an older major version). apt installs its dependencies (GTK 3, NSS, …).
+# It bundles the CLI that it runs as its server, /opt/OpenCode/resources/opencode-cli.
+# Its own updater can't install a .deb without root: rebuild (d_build_fresh) to update.
+# fd-find, fzf: finding and picking files, for the agent's shell and yours
+# featherpad: a GUI text editor (LXQt's), to look at and edit what the agent wrote
+# keep list sorted
+ARG OPENCODE_DEB=https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-amd64.deb
+RUN curl -fsSLo /tmp/opencode-desktop.deb "$OPENCODE_DEB" \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    /tmp/opencode-desktop.deb \
+    fd-find \
+    featherpad \
+    fzf \
+    && rm /tmp/opencode-desktop.deb \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Electron's sandbox needs user namespaces or a setuid chrome-sandbox, neither of which
+# works in a rootless container: a wrapper in /usr/local/bin (ahead of the package's
+# /usr/bin/ai.opencode on PATH) adds --no-sandbox, and the menu entries are pointed at it
+# (the build fails if a new package's .desktop files no longer have the expected Exec=).
+# --password-store=basic: Electron's safeStorage keeps secrets (provider logins) in a
+# file instead of a keyring; there's no keyring daemon in LXQt, and no user password to
+# unlock one with.
+RUN printf '#!/bin/sh\nexec /opt/OpenCode/ai.opencode --no-sandbox --password-store=basic "$@"\n' \
+        > /usr/local/bin/ai.opencode \
+    && chmod +x /usr/local/bin/ai.opencode \
+    && for f in ai.opencode.desktop opencode-desktop; do \
+           sed -i 's|^Exec=/opt/OpenCode/ai.opencode|Exec=/usr/local/bin/ai.opencode|' \
+               /usr/share/applications/$f.desktop \
+           && grep -q '^Exec=/usr/local/bin/ai.opencode' /usr/share/applications/$f.desktop \
+           || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
+       done
+
+# The terminal UI: `opencode` is the desktop app's bundled CLI (one copy in the image).
+# install_opencode (run as the user, like install_claude) installs opencode's own build
+# in ~/.opencode/bin (home volume), which updates itself; the installer puts that dir
+# first on PATH in ~/.bashrc, so it wins from the next shell on. Arguments go to the
+# installer (e.g. --version X, --no-modify-path).
+RUN ln -s /opt/OpenCode/resources/opencode-cli /usr/local/bin/opencode \
+    && opencode --version \
+    && printf '#!/bin/bash\nset -ex\ncurl -fsSL https://opencode.ai/v2/install | bash -s -- "$@"\n' \
+        > /usr/local/bin/install_opencode \
+    && chmod +x /usr/local/bin/install_opencode
+
+USER ${USERID}

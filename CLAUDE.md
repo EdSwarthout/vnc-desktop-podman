@@ -2,7 +2,8 @@
 
 Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
 or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
-Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages).
+Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages),
+and an OpenCode image on Ubuntu's LXQt (`opencode/`).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -55,6 +56,22 @@ See `README.md` for user-facing setup.
   (web search → PNG via the DevTools port). `install_chrome_devtools` (run by the
   user, like `install_claude`) copies `chrome-devtools-mcp`'s bundled skills to
   `~/.claude/skills`. Instances `ccNc`, ports 7000+N / 6180+N.
+- `opencode/Containerfile` — `d_distro=opencode`, one stage `lxqt`, tagged
+  `u2604opencode:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[opencode]="ubuntu lxqt"`,
+  as for chrome) + OpenCode Desktop (Electron `.deb` from opencode.ai's "latest" URL,
+  not GitHub's; `/usr/local/bin/ai.opencode` wrapper with `--no-sandbox
+  --password-store=basic`, both `.desktop` files pointed at it), `opencode` = a symlink
+  to the desktop's bundled CLI (`/opt/OpenCode/resources/opencode-cli`, one copy), and
+  `install_opencode` (run by the user, like `install_claude`: opencode's own build in
+  `~/.opencode/bin`, self-updating, first on PATH via `.bashrc`); plus `fd-find`, `fzf`,
+  `featherpad`. The app's own updater can't install a `.deb` without root: rebuild. The
+  app copies its CLI into the home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB)
+  and runs `opencode-cli serve` from there; no switch found to stop that.
+  Instances `ocNu` (`d_name0s`/`d_letters` in `env.rc`; nested `<this>_ocNu`), ports
+  7150+N / 6330+N (7100/6280 are the `research` branch's omarchy). `opencode/README.md`.
+- `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
+  `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
+  a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
@@ -297,7 +314,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
   Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
-  so every distro's instance N can run at once.
+  opencode 7150+N / 6330+N, so every distro's instance N can run at once. A distro
+  can have its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`,
+  nested `<this instance>_oc1u`.
   `d_select N` keeps only N; `_d_names` works out name, home and ports from
   the current `d_distro` in every function that needs them (via
   `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.

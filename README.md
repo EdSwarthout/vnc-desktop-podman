@@ -19,6 +19,8 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
+| `opencode/`     | [OpenCode](https://opencode.ai): `Containerfile` (`d_distro=opencode`: Ubuntu's `lxqt` stage + OpenCode Desktop and the `opencode` terminal UI, stage `lxqt`) and a [README](opencode/README.md) |
+| `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
 | `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
@@ -216,6 +218,7 @@ differently; see item 4 of "Inside the container"):
 | debian | N        | `ccNd`         | `$d_dir/d13ccN`     | 6950+N          | 6130+N            |
 | archlinux | 1     | `cc1a`         | `$d_dir/archcc1`    | 7051            | 6231              |
 | archlinux | N     | `ccNa`         | `$d_dir/archccN`    | 7050+N          | 6230+N            |
+| opencode | N      | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N      | 6330+N            |
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` at the time of each command, so after `d_select 1`,
@@ -408,6 +411,11 @@ that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_p
 `chrome` stage plus Chrome Canary, Puppeteer, Playwright (Node and Python, with
 `uv`), their MCP servers and Lighthouse (instances `ccNc`, VNC 7000+N, noVNC 6180+N).
 See [chrome/README.md](chrome/README.md) for all of it and the other options.
+
+**OpenCode:** `d_distro=opencode d_target=lxqt d_build`, then `d_select N;
+d_distro=opencode d_run` gives Ubuntu's LXQt desktop with OpenCode Desktop in the menu
+(Development) and `opencode` (the terminal UI) on the PATH (instances `ocNu`, VNC
+7150+N, noVNC 6330+N). See [opencode/README.md](opencode/README.md).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.
