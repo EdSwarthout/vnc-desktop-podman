@@ -33,10 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt from the lists anyway). Each apt
 # RUN ends with `mountpoint -q /var/cache/apt-debian || apt-get clean`, so a plain
 # `podman build` without the mount doesn't leave .debs in the image layers either.
+# Stop apt from changing the ownership of archives/partial
 RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
         > /etc/apt/apt.conf.d/docker-no-pkgcache \
-    && printf 'Dir::Cache::archives "/var/cache/apt-debian/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives
+    && printf 'Dir::Cache::archives "/var/cache/apt-debian/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives \
+    && printf 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99no-sandbox-user
 
 # Basics, network/debug and development tools, and nested rootless podman. The user
 # has no root in the container (below), so what's needed at runtime has to be here.
