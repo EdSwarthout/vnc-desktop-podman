@@ -1,0 +1,8 @@
+# d_build's context is the repo root: send only what the Containerfiles COPY (without
+# this it would send omarchy's multi-GB rootfs, logs, and .env with the VNC password).
+# A new COPY source must be added here (the build fails with "no such file").
+*
+!LICENSE
+!nested-subids
+!start.sh
+!*/user_files
