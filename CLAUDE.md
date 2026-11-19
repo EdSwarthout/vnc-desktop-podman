@@ -413,6 +413,9 @@ image has no apt lists. Everything below uses the nested podman.
   is ~550 threads. `d_run` sets `--pids-limit $d_pids_limit` (16384; podman's default
   is 2048); it can't be raised from inside, only by recreating the instance on the
   host. Nested, the flag is accepted but has no effect.
+- `SHELL` isn't set by podman (no login): `start.sh` exports the passwd entry's shell,
+  so the whole session has it. Without it, apps that read `$SHELL` fell back to `sh`
+  (OpenCode's terminal: dash, prompt `$ `). `podman exec` processes still lack it.
 - `$VNC_PASSWORD` may still be in this instance's environment (instances
   created before the `passwd.init` change); never print it.
 - `--cap-add` (e.g. `NET_RAW` in `d_run_opts`, for ping) makes the cap *ambient*

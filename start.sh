@@ -11,6 +11,12 @@ if [ "$(awk '/^CapAmb:/ { print $2 }' /proc/self/status)" != 0000000000000000 ];
     exec setpriv --inh-caps=-all --ambient-caps=-all "$0" "$@"
 fi
 
+# SHELL: nothing sets it (podman starts this without a login), so the whole session lacked
+# it, and programs that take the user's shell from $SHELL fell back to /bin/sh (OpenCode's
+# terminal: dash with a bare "$ " prompt). Use the passwd entry's shell, as login would.
+SHELL=$(getent passwd "$(id -u)" | cut -d: -f7)
+export SHELL=${SHELL:-/bin/bash}
+
 # First-boot setup in the (volume-mounted) home dir
 
 # New home: seed dotfiles from /etc/skel (the volume mount hides what useradd copied)
