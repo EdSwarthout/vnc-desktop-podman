@@ -251,7 +251,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome
   `.deb` URL uses `dpkg --print-architecture`, which is the image's, also in a
   cross build under emulation); Arch Linux is amd64 only (Docker Hub's
-  `archlinux` has no arm64). Canary on arm64 is untested. The shared apt caches
+  `archlinux` has no arm64), so on arm64 (`uname -m` = `aarch64`) `env.rc` unsets
+  its `d_bases`/`d_images` entries and `d_targets_archlinux`: no list has it, and
+  `d_distro=archlinux` is refused. Google publishes official Linux arm64 builds of
+  Chrome since 2026 (Canary first). The shared apt caches
   can serve both: `.deb` names carry the architecture. The user also runs
   instances on an arm64 machine (DGX Spark), so Claude Code may be running on
   arm64 for builds and tests there: check `uname -m` / `dpkg --print-architecture`
