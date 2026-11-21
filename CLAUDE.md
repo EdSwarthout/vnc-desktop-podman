@@ -248,6 +248,14 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   D-Bus activation file deleted: gsettings alone (lock off, lockdown) don't
   stop an explicit lock request, and the user has no password to unlock with.
   **Any new desktop stage: check that the screen can't lock.**
+- **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome
+  `.deb` URL uses `dpkg --print-architecture`, which is the image's, also in a
+  cross build under emulation); Arch Linux is amd64 only (Docker Hub's
+  `archlinux` has no arm64). Canary on arm64 is untested. The shared apt caches
+  can serve both: `.deb` names carry the architecture. The user also runs
+  instances on an arm64 machine (DGX Spark), so Claude Code may be running on
+  arm64 for builds and tests there: check `uname -m` / `dpkg --print-architecture`
+  before assuming amd64, and keep changes architecture-neutral.
 - **Chrome** runs via the `/usr/local/bin/google-chrome-stable` wrapper
   (`--no-sandbox` etc.); `~/.config/chrome-flags.conf` does nothing on Ubuntu.
 - **Chrome automation** uses the DevTools port from inside the instance

@@ -25,7 +25,8 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 ## Requirements
 
-- Linux host, amd64 and arm64, `podman` (rootless).
+- Linux host, amd64 or arm64 (Ubuntu and Debian; Arch Linux is amd64 only),
+  `podman` (rootless).
 - Optional: `vncviewer` (TigerVNC) on the host for `d_vnc`; otherwise any
   browser works via noVNC.
 - The container user is named `ed` (`d_user`) and gets the UID of whoever runs
