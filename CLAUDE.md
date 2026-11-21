@@ -3,7 +3,8 @@
 Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
 or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
 Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages),
-and an OpenCode image on Ubuntu's LXQt (`opencode/`).
+and an OpenCode image on Ubuntu's LXQt (`opencode/`), and a Google Antigravity image
+on Ubuntu's LXQt (`antigravity/`).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -71,6 +72,19 @@ See `README.md` for user-facing setup.
   and runs `opencode-cli serve` from there; no switch found to stop that.
   Instances `ocNu` (`d_name0s`/`d_letters` in `env.rc`; nested `<this>_ocNu`), ports
   7150+N / 6330+N (7100/6280 are the `research` branch's omarchy). `opencode/README.md`.
+- `antigravity/Containerfile` — `d_distro=antigravity`, one stage `lxqt`, tagged
+  `u2604antigravity:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[antigravity]="ubuntu lxqt"`)
+  + the Antigravity App (Electron tarball, no `.deb`: version + execution id from the
+  hub updater's `/releases` JSON, `ANTIGRAVITY_VERSION`/`ANTIGRAVITY_TGZ` override;
+  `linux-x64`/`linux-arm` after `dpkg --print-architecture`; unpacked in
+  `/opt/Antigravity`, build fails on a `not found` in `ldd`; wrapper
+  `/usr/local/bin/antigravity` with `--no-sandbox --password-store=basic`; our own
+  `antigravity.desktop`, the tarball has none), `install_agy` (run by the user, like
+  `install_claude`: Google's `install.sh` → `~/.local/bin/agy`, self-updating; the CLI
+  binary has no App-download code), and the Python SDK
+  `google-antigravity` from PyPI (wheels carry the `localharness` runtime) in a
+  user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`. Instances `agNu`, ports
+  7200+N / 6380+N. `antigravity/README.md`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
   `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
   a `!` line here.**
@@ -93,7 +107,9 @@ See `README.md` for user-facing setup.
   text doesn't arrive. Needs the session bus (`d_exec -s`); throwaway instances only.
 - `docs/` — `README.md` gallery with one screenshot per stage of the desktop
   on a fresh home (`ubuntu/<stage>.png`, `debian/<stage>.png`, `archlinux/<stage>.png`); retake a stage's picture when its initial
-  look changes (`[d_distro=debian] d_screenshots N <stage>`).
+  look changes (`[d_distro=debian] d_screenshots N <stage>`). Taken by hand, not by
+  `d_screenshots`: `archlinux/chromium.png`, `antigravity/lxqt-nested.png` (the App in
+  `ag1u` and a nested `ag1u_ag1u` on arm64).
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.
 
@@ -317,9 +333,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
   Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
-  opencode 7150+N / 6330+N, so every distro's instance N can run at once. A distro
+  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, so every distro's instance N can run at once. A distro
   can have its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`,
-  nested `<this instance>_oc1u`.
+  nested `<this instance>_oc1u`; antigravity `ag1u`.
   `d_select N` keeps only N; `_d_names` works out name, home and ports from
   the current `d_distro` in every function that needs them (via
   `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.

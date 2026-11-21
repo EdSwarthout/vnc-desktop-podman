@@ -4,7 +4,7 @@ A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma
 on Ubuntu 26.04, GNOME on Debian 13 (trixie), or Openbox on Arch Linux, over VNC/noVNC,
 with Google Chrome (Chromium on Arch), nested rootless podman and `install_claude` for
 Claude Code. There are also images for [Chrome automation](chrome/README.md) and
-[OpenCode](opencode/README.md). Smaller stages (headless, or VNC with just an xterm)
+[OpenCode](opencode/README.md) and [Google Antigravity](antigravity/README.md). Smaller stages (headless, or VNC with just an xterm)
 are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
 Each instance keeps its home directory on the host, so settings, browser profile
 and tools installed there survive rebuilds.
@@ -22,6 +22,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `opencode/`     | [OpenCode](https://opencode.ai): `Containerfile` (`d_distro=opencode`: Ubuntu's `lxqt` stage + OpenCode Desktop and the `opencode` terminal UI, stage `lxqt`) and a [README](opencode/README.md) |
+| `antigravity/`  | [Google Antigravity](https://antigravity.google): `Containerfile` (`d_distro=antigravity`: Ubuntu's `lxqt` stage + the Antigravity App, its Python SDK and `install_agy` for the CLI, stage `lxqt`) and a [README](antigravity/README.md) |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
@@ -65,7 +66,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
      ```
      On a client, mount them at the same paths under that client's `$d_dir`,
      or set `d_aptcaches[ubuntu]=…` / `d_aptcaches[debian]=…` in `.env`.
-     The `chrome` and `opencode` images have no cache of their own: they build on
+     The `chrome`, `opencode` and `antigravity` images have no cache of their own: they build on
      Ubuntu's stages and use `apt-cache-ubuntu`.
 
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
@@ -226,6 +227,7 @@ differently; see item 4 of "Inside the container"):
 | archlinux | 1     | `cc1a`         | `$d_dir/archcc1`    | 7051            | 6231              |
 | archlinux | N     | `ccNa`         | `$d_dir/archccN`    | 7050+N          | 6230+N            |
 | opencode | N      | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N      | 6330+N            |
+| antigravity | N   | `agNu`         | `$d_dir/u2604antigravityN` | 7200+N   | 6380+N            |
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` at the time of each command, so after `d_select 1`,
@@ -257,8 +259,8 @@ kept).
 current image; the home dir is kept.
 
 **Your own files in new homes:** put them in `ubuntu/user_files/`,
-`debian/user_files/` or `archlinux/user_files/` (gitignored; `chrome` and
-`opencode` use Ubuntu's), laid out as in the home, e.g. `.bashrc`,
+`debian/user_files/` or `archlinux/user_files/` (gitignored; `chrome`,
+`opencode` and `antigravity` use Ubuntu's), laid out as in the home, e.g. `.bashrc`,
 `.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
 image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
 and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
@@ -432,6 +434,13 @@ d_distro=opencode d_target=lxqt d_run` gives Ubuntu's LXQt desktop with OpenCode
 Desktop in the menu (Development) and `opencode` (the terminal UI) on the PATH
 (instances `ocNu`, VNC 7150+N, noVNC 6330+N). The image builds on amd64 and arm64.
 See [opencode/README.md](opencode/README.md).
+
+**Google Antigravity:** `d_distro=antigravity d_target=lxqt d_build`, then `d_select N;
+d_distro=antigravity d_target=lxqt d_run` gives Ubuntu's LXQt desktop with the
+Antigravity App in the menu (Development), its Python SDK (`google-antigravity`) in a
+venv on the PATH, and `install_agy` for the `agy` CLI (instances `agNu`, VNC 7200+N,
+noVNC 6380+N). The image builds on amd64 and arm64.
+See [antigravity/README.md](antigravity/README.md).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

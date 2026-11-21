@@ -1,0 +1,94 @@
+ARG BASE=localhost/u2604cc:lxqt
+
+# Google Antigravity (d_distro=antigravity, https://antigravity.google): Ubuntu's lxqt
+# stage (../ubuntu/Containerfile: LXQt, Google Chrome, TigerVNC/noVNC, nested podman)
+# plus the Antigravity desktop app, its Python SDK and an installer for its CLI. The
+# base is that locally built image, so d_build builds it first. The build context is
+# the repo root. One stage, tagged u2604antigravity:lxqt:
+#   lxqt - lxqt + Antigravity App (Electron), Python SDK, install_agy; session is LXQt
+# See README.md here.
+
+# ---------------------------------------------------------------------------------------
+# Stage "lxqt": Ubuntu's lxqt + Antigravity
+FROM ${BASE} AS lxqt
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID, which is what ${USERID} below expands to), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# Antigravity App: Google's Linux tarball, unpacked in /opt/Antigravity. The updater
+# service's /releases lists versions newest first with the build ("execution") id that
+# is part of the download URL; ANTIGRAVITY_VERSION picks one (empty: the newest), and
+# ANTIGRAVITY_TGZ overrides the whole URL. Builds for amd64 (linux-x64) and arm64
+# (linux-arm), after dpkg's architecture (the image's, also in a cross build). No
+# checksum is published. The top directory (Antigravity-x64/…) is stripped.
+# There's no .deb, so no dependencies come with it: Chrome's cover Electron's; the
+# build fails if a library is missing.
+# The app's own updater can't write /opt: rebuild (d_build_fresh) to update.
+ARG ANTIGRAVITY_VERSION=
+ARG ANTIGRAVITY_TGZ=
+RUN set -e; \
+    url="$ANTIGRAVITY_TGZ"; \
+    if [ -z "$url" ]; then \
+        case "$(dpkg --print-architecture)" in \
+            amd64) plat=linux-x64 ;; \
+            arm64) plat=linux-arm ;; \
+            *) echo "Antigravity: no build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+        esac; \
+        rel=$(curl -fsSL https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases \
+              | jq -er --arg v "$ANTIGRAVITY_VERSION" \
+                    '[.[] | select($v == "" or .version == $v)][0] | "\(.version)-\(.execution_id)"'); \
+        url="https://storage.googleapis.com/antigravity-public/antigravity-hub/$rel/$plat/Antigravity.tar.gz"; \
+    fi; \
+    echo "Antigravity App: $url"; \
+    mkdir -p /opt/Antigravity; \
+    curl -fsSL "$url" | tar -xz --strip-components=1 --no-same-owner -C /opt/Antigravity; \
+    test -x /opt/Antigravity/antigravity; \
+    if ldd /opt/Antigravity/antigravity | grep 'not found'; then \
+        echo "Antigravity: missing libraries" >&2; exit 1; \
+    fi
+
+# Electron's sandbox needs user namespaces or a setuid chrome-sandbox, neither of which
+# works in a rootless container: the wrapper adds --no-sandbox. --password-store=basic:
+# Electron's safeStorage keeps secrets (the Google sign-in) in a file instead of a
+# keyring; there's no keyring daemon in LXQt, and no user password to unlock one with.
+# The tarball has no .desktop file (nor an icon file): the menu entry is ours.
+RUN printf '#!/bin/sh\nexec /opt/Antigravity/antigravity --no-sandbox --password-store=basic "$@"\n' \
+        > /usr/local/bin/antigravity \
+    && chmod +x /usr/local/bin/antigravity \
+    && printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Antigravity' \
+        'Comment=Google Antigravity: agentic coding' \
+        'Exec=/usr/local/bin/antigravity %U' 'Icon=applications-development' \
+        'Terminal=false' 'Categories=Development;' 'StartupWMClass=Antigravity' \
+        > /usr/share/applications/antigravity.desktop
+
+# Antigravity CLI (agy): run install_agy as the user at runtime, like install_claude.
+# Google's installer puts it in ~/.local/bin (home volume, on PATH), where it persists
+# and updates itself. Arguments go to the installer (e.g. --dir PATH).
+RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://antigravity.google/cli/install.sh | bash -s -- "$@"\n' \
+        > /usr/local/bin/install_agy \
+    && chmod +x /usr/local/bin/install_agy
+
+# Antigravity SDK for Python (google-antigravity from PyPI; its wheels carry the
+# compiled runtime, google/antigravity/bin/localharness, so the GitHub repo alone isn't
+# enough). As in ../chrome/Containerfile: uv and a virtual environment, both owned by
+# the user and outside the home (a volume, which would hide them): /opt/uv/bin/uv and
+# /opt/venv. The venv is first on PATH and is uv's default target (VIRTUAL_ENV), so
+# `python3` finds the SDK, and the user adds or upgrades packages without root:
+# `uv pip install -U google-antigravity` (lost when the instance is replaced; rebuild to
+# keep it). ANTIGRAVITY_SDK_VERSION pins a version (empty: the newest). The system's
+# /usr/bin/python3 is untouched. UV_UNMANAGED_INSTALL: just the binaries, no changes to
+# shell profiles; to update uv, rebuild. UV_NO_CACHE: nothing left in the build-time home.
+ARG ANTIGRAVITY_SDK_VERSION=
+RUN install -d -o ${USERID} -g ${USERID} /opt/uv /opt/venv
+USER ${USERID}
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:/opt/uv/bin:${PATH}
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/opt/uv/bin sh \
+    && UV_NO_CACHE=1 uv venv --python /usr/bin/python3 /opt/venv \
+    && UV_NO_CACHE=1 uv pip install \
+        "google-antigravity${ANTIGRAVITY_SDK_VERSION:+==${ANTIGRAVITY_SDK_VERSION}}" \
+    && python3 -c 'from google.antigravity import Agent, LocalAgentConfig' \
+    && rm -rf ~/.cache ~/.config/uv ~/.local/share/uv
