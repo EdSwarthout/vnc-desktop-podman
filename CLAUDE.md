@@ -38,7 +38,9 @@ See `README.md` for user-facing setup.
   `docs/<distro>/<stage>.png` on a throwaway instance N), `d_test N [STAGE...]`
   (build, run on a throwaway instance N, check, remove: see "Testing a change"),
   `d_exec [-s] [-d] CMD` (`podman exec` minus ambient caps; `-s`: with the
-  session's D-Bus/XDG environment), `d_rm [-f] [N]` (container **and home**; asks
+  session's D-Bus/XDG environment), `d_run_cmd [CMD...]` (default `bash`: throwaway
+  `--rm -it` container `<name>-cmd` on instance N's image and home, beside a running
+  instance: no `--replace`, no ports, no `start.sh`, no ambient caps), `d_rm [-f] [N]` (container **and home**; asks
   unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
   apt step that ran, `0 B/…` = all from the shared cache; for archlinux, pacman
   "downloaded/installed" per step). `_d_wait_ready` waits

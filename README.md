@@ -414,6 +414,10 @@ d_distro=archlinux d_test 20       # every Arch Linux stage
 selected instance without the ambient capabilities `--cap-add` would give it (GTK
 programs fail to load icons with them); `d_exec -s` adds the desktop session's
 D-Bus environment, and `-d` detaches: `d_exec -s -d gnome-terminal`.
+`d_run_cmd [COMMAND...]` (default `bash`) runs a command interactively in a
+throwaway container (`--rm`, named `<instance>-cmd`) of the selected instance's image
+and home, alongside the instance if it is running (no published ports). It skips
+`start.sh`: a new home isn't set up and there is no VNC.
 
 **Automate Chrome in an instance:** `d_chrome [URL...]` starts Chrome on the
 selected instance's desktop with its DevTools (remote debugging) port open, inside
