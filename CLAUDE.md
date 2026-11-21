@@ -265,9 +265,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   D-Bus activation file deleted: gsettings alone (lock off, lockdown) don't
   stop an explicit lock request, and the user has no password to unlock with.
   **Any new desktop stage: check that the screen can't lock.**
-- **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome
-  `.deb` URL uses `dpkg --print-architecture`, which is the image's, also in a
-  cross build under emulation); Arch Linux is amd64 only (Docker Hub's
+- **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome and
+  OpenCode `.deb` URLs use `dpkg --print-architecture`, which is the image's,
+  also in a cross build under emulation; upstream publishes both arches for
+  OpenCode Desktop and CLI); Arch Linux is amd64 only (Docker Hub's
   `archlinux` has no arm64), so on arm64 (`uname -m` = `aarch64`) `env.rc` unsets
   its `d_bases`/`d_images` entries and `d_targets_archlinux`: no list has it, and
   `d_distro=archlinux` is refused. Google publishes official Linux arm64 builds of

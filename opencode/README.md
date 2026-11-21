@@ -3,14 +3,20 @@
 [OpenCode](https://opencode.ai/product), an open-source AI coding agent, as a desktop
 app and a terminal UI. It runs on Ubuntu's `lxqt` stage (LXQt, Google Chrome,
 TigerVNC/noVNC, nested podman, `install_claude`). One stage, `lxqt`, tagged
-`u2604opencode:lxqt`.
+`u2604opencode:lxqt`. It builds on amd64 and arm64: the desktop `.deb` URL follows
+the image's `dpkg --print-architecture`, and `install_opencode` installs a native
+arm64 CLI on arm64.
 
 ```bash
 source ./env.rc
-d_distro=opencode d_target=lxqt d_build      # builds u2604cc:lxqt first
-d_select 1; d_distro=opencode d_run          # instance oc1u
-d_distro=opencode d_vnc                      # VNC 7151, or noVNC on 6331
+d_distro=opencode d_target=lxqt d_build              # builds u2604cc:lxqt first
+d_select 1; d_distro=opencode d_target=lxqt d_run    # instance oc1u
+d_distro=opencode d_vnc                              # VNC 7151 (needs vncviewer)
+d_distro=opencode d_novnc                            # or noVNC on 6331, in a browser
 ```
+
+Keep `d_target=lxqt` on the `d_run` line: a variable set for the `d_build` command
+doesn't stay set in your shell, and `xfce` (the default) isn't an OpenCode stage.
 
 | Distro   | Container name | Home                    | VNC    | noVNC  |
 |----------|----------------|-------------------------|--------|--------|
@@ -59,5 +65,5 @@ They are all in the home, so they outlive the container:
 - the app's data and sessions: `~/.local/share/opencode`
 - the desktop app's settings, and its copy of the CLI: `~/.config/ai.opencode.desktop`
 
-A new home starts on OpenCode's free model. Connect a provider from the app, or with
-`opencode auth` in a terminal.
+A new home can use OpenCode's free models. Connect another provider with `/connect`
+in the terminal UI, or from the desktop app.

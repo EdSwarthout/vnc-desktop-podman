@@ -2,10 +2,12 @@
 
 A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop
 on Ubuntu 26.04, GNOME on Debian 13 (trixie), or Openbox on Arch Linux, over VNC/noVNC,
-with Google Chrome (Chromium on Arch), Claude Code and nested rootless podman. Smaller stages
-(headless, or VNC with just an xterm) are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
+with Google Chrome (Chromium on Arch), nested rootless podman and `install_claude` for
+Claude Code. There are also images for [Chrome automation](chrome/README.md) and
+[OpenCode](opencode/README.md). Smaller stages (headless, or VNC with just an xterm)
+are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
 Each instance keeps its home directory on the host, so settings, browser profile
-and the Claude install survive rebuilds.
+and tools installed there survive rebuilds.
 
 Why use it: [A full Linux desktop for your AI agent, in a rootless container](docs/Advantages-article.md).
 
@@ -18,7 +20,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `nested-subids` | Fits nested podman's sub-IDs to the container at boot (all distros) |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each stage's desktop; [article](docs/Advantages-article.md) on the advantages |
-| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_test`, `d_rm`, …)    |
+| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `opencode/`     | [OpenCode](https://opencode.ai): `Containerfile` (`d_distro=opencode`: Ubuntu's `lxqt` stage + OpenCode Desktop and the `opencode` terminal UI, stage `lxqt`) and a [README](opencode/README.md) |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
@@ -27,8 +29,8 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 ## Requirements
 
-- Linux host, amd64 or arm64 (Ubuntu and Debian; Arch Linux is amd64 only, and
-  `env.rc` leaves it out on arm64), `podman` (rootless).
+- Linux host, amd64 or arm64 (Ubuntu, Debian and the Chrome and OpenCode images; Arch Linux is
+  amd64 only, and `env.rc` leaves it out on arm64), `podman` (rootless).
 - Optional: `vncviewer` (TigerVNC) on the host for `d_vnc`; otherwise any
   browser works via noVNC.
 - The container user is named `ed` (`d_user`) and gets the UID of whoever runs
@@ -63,6 +65,8 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
      ```
      On a client, mount them at the same paths under that client's `$d_dir`,
      or set `d_aptcaches[ubuntu]=…` / `d_aptcaches[debian]=…` in `.env`.
+     The `chrome` and `opencode` images have no cache of their own: they build on
+     Ubuntu's stages and use `apt-cache-ubuntu`.
 
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
    the first 8 characters) and your `d_dir`. `env.rc` sources it, so it can
@@ -131,7 +135,8 @@ unlock it with. It is the largest image, about 0.8 GB more than `chrome`.
 is no GPU behind the VNC display. Its screensaver is not run at all, for the
 same reason as in `kde`: it would lock the screen with no password to unlock it.
 
-[`docs/`](docs/README.md) has a screenshot of each desktop as it first comes up.
+[`docs/`](docs/README.md) has a screenshot of each Ubuntu, Debian and Arch Linux
+desktop stage as it first comes up.
 
 A home dir works with any stage: the session comes from the image
 (`/usr/local/bin/vnc-session`), not the home.
@@ -216,6 +221,8 @@ differently; see item 4 of "Inside the container"):
 | ubuntu | N        | `ccNu`         | `$d_dir/u2604ccN`   | 6900+N          | 6080+N            |
 | debian | 1        | `cc1d`         | `$d_dir/d13cc1`     | 6951            | 6131              |
 | debian | N        | `ccNd`         | `$d_dir/d13ccN`     | 6950+N          | 6130+N            |
+| chrome | 1        | `cc1c`         | `$d_dir/u2604chrome1` | 7001            | 6181              |
+| chrome | N        | `ccNc`         | `$d_dir/u2604chromeN` | 7000+N          | 6180+N            |
 | archlinux | 1     | `cc1a`         | `$d_dir/archcc1`    | 7051            | 6231              |
 | archlinux | N     | `ccNa`         | `$d_dir/archccN`    | 7050+N          | 6230+N            |
 | opencode | N      | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N      | 6330+N            |
@@ -236,9 +243,11 @@ d_run          # creates the home dir and starts (or replaces) the container
 The VNC password never goes into the container's environment (where it would
 show in `podman inspect` and be inherited by everything on the desktop). While
 the home has no `~/.config/tigervnc/passwd`, `d_run` writes `$VNC_PASSWORD` to
-`passwd.init` next to it (mode 600) and refuses to start without one; on first
-start `start.sh` turns that into `passwd` and deletes it. After that the stored
-password is used. (An instance created by an older `d_run` still has
+`passwd.init` next to it (mode 600) and refuses to start without one (the
+headless `base` stage needs no password); on first start `start.sh` turns that
+into `passwd` and deletes it. After that the stored password is used. Inside an
+instance, a nested instance copies this instance's `passwd` instead when
+`$VNC_PASSWORD` isn't set. (An instance created by an older `d_run` still has
 `VNC_PASSWORD` in its environment: `d_run` it again once.) `start.sh` also
 writes an `xstartup` that runs the stage's session (an `xstartup` written by
 older versions, which always started XFCE, is replaced; a customised one is
@@ -248,7 +257,8 @@ kept).
 current image; the home dir is kept.
 
 **Your own files in new homes:** put them in `ubuntu/user_files/`,
-`debian/user_files/` or `archlinux/user_files/` (gitignored), laid out as in the home, e.g. `.bashrc`,
+`debian/user_files/` or `archlinux/user_files/` (gitignored; `chrome` and
+`opencode` use Ubuntu's), laid out as in the home, e.g. `.bashrc`,
 `.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
 image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
 and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
@@ -337,8 +347,9 @@ which one exited.
    older nested storage, run `podman system reset` once as it says. How the
    nesting is set up is described in `CLAUDE.md`.
 
-5. **Screenshots** (`xfce`, `lxqt`, `gnome`, `kde`, `mate`, `cinnamon`): `tests/screenshot.sh [FILE.png]` saves a
-   full-screen PNG of the desktop and prints its path.
+5. **Screenshots** (any desktop stage): `tests/screenshot.sh [FILE.png]` saves a
+   full-screen PNG of the desktop and prints its path (the tool depends on the
+   stage; `d_screenshots` installs `scrot` where none is included).
 
 **No root inside.** The image is meant to carry everything needed: `ed` has no
 general `sudo` (the one exception is the boot-time `nested-subids`, which
@@ -359,7 +370,7 @@ podman ps                  # running instances
 podman logs cc1u           # entrypoint / VNC / websockify output
 podman stop cc1u           # stop
 podman start cc1u          # start again (same container)
-podman exec -it cc1ubash   # shell without the desktop
+podman exec -it cc1u bash   # shell without the desktop
 ```
 
 **Change the VNC password:** delete `<home>/.config/tigervnc/passwd` on
@@ -413,9 +424,10 @@ that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_p
 See [chrome/README.md](chrome/README.md) for all of it and the other options.
 
 **OpenCode:** `d_distro=opencode d_target=lxqt d_build`, then `d_select N;
-d_distro=opencode d_run` gives Ubuntu's LXQt desktop with OpenCode Desktop in the menu
-(Development) and `opencode` (the terminal UI) on the PATH (instances `ocNu`, VNC
-7150+N, noVNC 6330+N). See [opencode/README.md](opencode/README.md).
+d_distro=opencode d_target=lxqt d_run` gives Ubuntu's LXQt desktop with OpenCode
+Desktop in the menu (Development) and `opencode` (the terminal UI) on the PATH
+(instances `ocNu`, VNC 7150+N, noVNC 6330+N). The image builds on amd64 and arm64.
+See [opencode/README.md](opencode/README.md).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

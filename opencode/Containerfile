@@ -19,14 +19,17 @@ ARG USERID
 ARG USER_UID
 
 # OpenCode Desktop: the .deb from opencode.ai's "latest" URL (GitHub's "latest" release
-# can be an older major version). apt installs its dependencies (GTK 3, NSS, …).
+# can be an older major version). It ships an amd64 and an arm64 build; dpkg reports the
+# image's architecture, also in a cross build under emulation. OPENCODE_DEB can override
+# the URL. apt installs its dependencies (GTK 3, NSS, …).
 # It bundles the CLI that it runs as its server, /opt/OpenCode/resources/opencode-cli.
 # Its own updater can't install a .deb without root: rebuild (d_build_fresh) to update.
 # fd-find, fzf: finding and picking files, for the agent's shell and yours
 # featherpad: a GUI text editor (LXQt's), to look at and edit what the agent wrote
 # keep list sorted
-ARG OPENCODE_DEB=https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-amd64.deb
-RUN curl -fsSLo /tmp/opencode-desktop.deb "$OPENCODE_DEB" \
+ARG OPENCODE_DEB=
+RUN curl -fsSLo /tmp/opencode-desktop.deb \
+        "${OPENCODE_DEB:-https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-$(dpkg --print-architecture).deb}" \
     && apt-get update && apt-get install -y --no-install-recommends \
     /tmp/opencode-desktop.deb \
     fd-find \
