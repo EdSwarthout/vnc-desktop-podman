@@ -374,6 +374,9 @@ image has no apt lists. Everything below uses the nested podman.
    `docs/<distro>/` (`d_distro=<distro> d_screenshots N <name>`, plus a section in `docs/README.md`).
 
 ## Gotchas met so far
+- **Open**: `d_run_opts`' `--network=pasta:-T,5201,--map-gw` (order fixed for podman 4.9)
+  lets `podman run` start, but iperf3 in the instance still can't reach the parent's
+  port 5201. Not investigated yet.
 - `[ -s FILE ]` is always false for `/proc` files (size 0): test the content.
 - `localhost` may resolve to `::1` first; a published port whose service only
   listens on IPv4 then accepts and resets. Use `127.0.0.1` in checks.
