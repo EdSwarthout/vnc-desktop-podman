@@ -1,11 +1,11 @@
 # Intel iGPU (UHD 770) for Omarchy and GNOME on Wayland
 
-Status: **tested in throwaway containers** (2026-11-22, nested in cc1u, which has only
-`renderD128`). Both desktops render on the iGPU, and two instances of each ran at once.
+Status: **done** (2026-11-22). Tested in throwaway containers nested in cc1u, which has
+only `renderD128`. Both desktops render on the iGPU, and two instances of each ran at once.
 GNOME needs nothing new. Hyprland can't use a bare render node, but it works nested in a
-headless labwc (prototype: `omarchy-gpu-session.sh`). **Omarchy render-node mode done**
-(2026-11-22): `o_render=1` in `../omarchy/` (see its README). GNOME items still open: see
-"Next".
+headless labwc (prototype: `omarchy-gpu-session.sh`). **Omarchy render-node mode**:
+`o_render=1` in `../omarchy/` (see its README). **GNOME over RDP** with the GPU:
+`../wayland/` (`MODE= headless.sh` + `rdp-headless.sh`, see its README).
 
 ### Device decision (2026-11-22)
 
@@ -115,8 +115,8 @@ keep-groups`, no other `/dev/dri` node):
   dbus-x11` (apt as root, `podman commit`), running `../wayland/headless.sh` with `MOCK=1`.
   `COGL_DEBUG=winsys,driver` prints the GL strings; `MUTTER_DEBUG=backend,render` shows the
   device choice.
-- Not done: Omarchy's own desktop (Lua config, Quickshell) on this path; GNOME seen over
-  RDP with the GPU; the host side (the host desktop was not watched during the tests).
+- Later (see "Next"): Omarchy's own desktop on this path, GNOME over RDP with the GPU.
+  Not done: the host side (the host desktop was not watched during the tests).
 
 ## Next
 
@@ -131,9 +131,13 @@ keep-groups`, no other `/dev/dri` node):
      from wayvnc).
    - New homes get `omarchy_monitor_scale = 1` (`"auto"` picked 2).
    - The session waits for the output to be active before starting wayvnc.
-2. **GNOME**: `--device /dev/dri/renderD128` in the `../wayland/` notes; check over RDP
-   that gnome-remote-desktop's screencast still works with the GPU.
-3. Results into `../wayland/README.md` (`../omarchy/README.md`: done).
+2. ~~**GNOME**~~ **done** 2026-11-22. With the render node, the full Shell shows over RDP
+   and a click went through. gnome-shell gains i915 render time as the screen changes;
+   gnome-remote-desktop encodes on the CPU (no render-node fd). This used gnome-remote-
+   desktop's **headless** mode (`../wayland/rdp-headless.sh`): a virtual monitor per
+   client and credentials in a file, no keyring. Run the shell with no monitor of its own
+   (`MODE= headless.sh`), or the client sees a second, empty monitor.
+3. ~~Results into the READMEs~~ **done** (`../omarchy/README.md`, `../wayland/README.md`).
 4. Maybe: report the two aquamarine bugs upstream (Wayland backend: unflushed first commit
    / idle callbacks only drained on parent events; frame emitted before `ack_configure`).
 
@@ -166,6 +170,7 @@ After the prerequisite, ask Claude Code (in the repo):
 
 It should:
 1. Confirm `/dev/dri/renderD128` is visible and opens from a nested container.
-2. Go through "Next" in order (the test image `u2604cc:gstest`, gnome-shell for the GNOME
-   items, may still be in cc1u's nested storage).
+2. Everything under "Next" is done except reporting the aquamarine bugs upstream (the
+   test image `u2604cc:gstest`, gnome-shell + gnome-remote-desktop, may still be in cc1u's
+   nested storage).
 3. Update this file's Status line as it goes.
