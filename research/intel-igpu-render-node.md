@@ -138,8 +138,10 @@ keep-groups`, no other `/dev/dri` node):
    client and credentials in a file, no keyring. Run the shell with no monitor of its own
    (`MODE= headless.sh`), or the client sees a second, empty monitor.
 3. ~~Results into the READMEs~~ **done** (`../omarchy/README.md`, `../wayland/README.md`).
-4. Maybe: report the two aquamarine bugs upstream (Wayland backend: unflushed first commit
-   / idle callbacks only drained on parent events; frame emitted before `ack_configure`).
+4. ~~Report the aquamarine bugs upstream~~: draft in
+   [aquamarine-upstream-draft.md](aquamarine-upstream-draft.md), **not submitted**. Both
+   startup bugs are already fixed in aquamarine v0.16.0. The fixed-version binds are
+   issue #398, closed as not planned.
 
 ## Caveats
 
@@ -170,7 +172,7 @@ After the prerequisite, ask Claude Code (in the repo):
 
 It should:
 1. Confirm `/dev/dri/renderD128` is visible and opens from a nested container.
-2. Everything under "Next" is done except reporting the aquamarine bugs upstream (the
+2. Everything under "Next" is done; the upstream report is a draft for the user (the
    test image `u2604cc:gstest`, gnome-shell + gnome-remote-desktop, may still be in cc1u's
    nested storage).
 3. Update this file's Status line as it goes.
