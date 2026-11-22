@@ -4,11 +4,12 @@ Status: **experiment**, 2026-11-17; GPU render-node mode added 2026-11-22. Stand
 its own `Containerfile` and `env.rc` (prefix `o_`), not wired into the top-level `env.rc`,
 `start.sh` or `d_test`. Tested in a nested podman inside an Ubuntu instance: with the
 host's vkms card passed through (cc8u), and with only the Intel iGPU's render node
-`renderD128` (cc1u).
+`renderD128` (cc1u). **amd64 only**: the rootfs comes from the x86 ISO, so not on the
+DGX Spark (arm64).
 
 ## Result
 
-Omarchy 4.5.0 (ISO 2026.11.05): Hyprland 0.56 and Omarchy's Quickshell shell (bar, menus,
+Omarchy 4.5.0 (`omarchy-4.5.0-x86.iso`, 2026.11.05): Hyprland 0.56 and Omarchy's Quickshell shell (bar, menus,
 notifications, lock) run without systemd, on a **vkms** DRM card, rendered on the CPU,
 and are shown and driven over **wayvnc** (no password, port 7100+N).
 
@@ -21,7 +22,7 @@ Hyprland can't drive a render node itself, so it runs nested in a headless labwc
 | Stage | What | Screenshot |
 |---|---|---|
 | `rootfs` | the installed Omarchy system + user, pacman usable; headless | |
-| `wayvnc` | + wayvnc and noVNC (websockify, port 6280+N); bare Hyprland (`hyprland-vnc.conf`) with a foot terminal | `wayvnc.png` |
+| `wayvnc` | + wayvnc and noVNC (websockify, port 6280+N); bare Hyprland (`hyprland-vnc.conf`) with a foot terminal; labwc, wlr-randr, wtype for render-node mode | `wayvnc.png` |
 | `omarchy` | + Omarchy's own desktop from the home's config; systemd/uwsm shims | `omarchy.png` |
 
 Checked:
@@ -63,8 +64,9 @@ the Omarchy logo in the bar, or `o_exec omarchy-menu toggle root`. Super chords 
 (meta+space, meta+Return, or noVNC's Windows-key toggle); the extension is fine for
 looking and clicking.
 
-`extract.sh` needs the ISO loop-mounted at `omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`);
-`o_build` needs only `omarchy/rootfs.tar`. `o_run` needs `/dev/dri/<vkms card>` (or, with
+`extract.sh` needs the ISO (`omarchy-4.5.0-x86.iso`) loop-mounted at
+`omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`); `o_build` needs only `omarchy/rootfs.tar`,
+so with the tar in place the ISO needn't be mounted. `o_run` needs `/dev/dri/<vkms card>` (or, with
 `o_render`, `/dev/dri/renderD128`) where it runs. A nested run needs the outer instance
 created with that device (render node: `--device /dev/dri/renderD128 --group-add
 keep-groups` in the host's `d_run_opts`).
@@ -85,14 +87,20 @@ keep-groups` in the host's `d_run_opts`).
   ("Woah partner…"), so each `RUN` sets `OMARCHY_ALLOW_DIRECT_PACMAN=1`. The shared
   pacman cache works as in `../archlinux/` (`CacheDir = /var/cache/apt-archlinux/`, no
   `DownloadUser`).
-- **DRM: the vkms card only.** Its number depends on module load order: here card0 was
-  the NVIDIA GPU and vkms was card2. `o_run` finds the vkms card itself (`/sys/class/drm/card*`
-  → `…/vkms/…`) and refuses any other unless `o_card=… o_allow_gpu=1`. Mesa renders on
-  the CPU (kms_swrast).
+- **DRM device: the vkms card, or with `o_render` a render node.** Never a real card
+  node: on hwd23 the Intel `card1` drives the host's monitors.
+  - vkms: its number depends on module load order. On hwd23 it was `card2` (2026-11-17,
+    `card0` was the NVIDIA GPU) and later `card0`; on the DGX Spark it's `card1`. `o_run`
+    finds it itself (`/sys/class/drm/card*` → `…/vkms/…`) and refuses any other card
+    unless `o_card=… o_allow_gpu=1`. Mesa renders on the CPU (kms_swrast).
+  - Render node: `o_render=1` is `renderD128`, which is the Intel iGPU on hwd23 (on the
+    Spark it would be the NVIDIA GB10: no Mesa driver, and Omarchy doesn't run there
+    anyway). Mesa renders on the GPU (iris). See "Render-node mode" below.
 - **No logind/seatd**: `LIBSEAT_BACKEND=noop` makes libseat open the card directly.
   A private session bus comes from `dbus-launch`. `XDG_RUNTIME_DIR=/tmp/xdg-$UID`.
-- **`omarchy-session`** (CMD) starts Hyprland and waits for its socket, then runs
-  `wayvnc -r -o <output> 0.0.0.0 5900`. It exits when either one does. `-r`
+- **`omarchy-session`** (CMD) starts Hyprland (in render-node mode after labwc) and waits
+  for its socket, then runs `wayvnc -r -o <output> 0.0.0.0 5900` and websockify. It exits
+  when any of them does, so the container stops. `-r`
   (`--render-cursor`) draws the pointer into the frames: without it the mouse worked,
   but the pointer was invisible in the client. `WAYVNC_OPTS` replaces the options;
   set it empty to drop `-r`.
@@ -100,7 +108,7 @@ keep-groups` in the host's `d_run_opts`).
     `hyprctl keyword` doesn't work with Lua configs ("Use eval"), and an eval at startup
     is undone by Omarchy's config reloads. So on a new home the session edits the
     seeded `~/.config/hypr/monitors.lua`: `mode = os.getenv("VNC_RESOLUTION") or
-    "preferred"`, and GDK scale 1.
+    "preferred"`, monitor scale 1 (was `"auto"`) and GDK scale 1.
 - **Pointer hiding**: Omarchy sets `cursor.hide_on_key_press = true`, so tapping
   Super hid the pointer until the mouse moved. At every start the session appends
   `hl.config({ cursor = { hide_on_key_press = false } })` to the home's
@@ -129,13 +137,18 @@ keep-groups` in the host's `d_run_opts`).
     `wlr-randr`. Hyprland runs as labwc's client on aquamarine's Wayland backend, which
     renders on the same node. Its output `WAYLAND-1` takes the size of labwc's
     maximized window. wayvnc still talks to Hyprland, so labwc gets no input.
-    Not sway or weston: aquamarine binds `xdg_wm_base` v6, and they offer 5.
+    Not sway or weston: aquamarine binds `xdg_wm_base` v6, and they offer 5 (upstream
+    issue hyprwm/aquamarine#398, closed as not planned).
   - Two aquamarine startup bugs, worked around in the session. (1) The output's first
     commit stays unflushed, and the output isn't announced until labwc sends an event:
     a `wtype` key on labwc is that event. (2) It renders before acking the first
     configure, and labwc drops it for that: `WAYLAND-1` starts disabled (runtime rule)
     and `hyprctl reload` enables it. A later eval/keyword rule doesn't re-enable a
     disabled output; reload drops the runtime rule and the config's rules apply.
+    Both bugs are fixed upstream in aquamarine v0.16.0. Omarchy 4.5.0 pins 0.15.1. When
+    it moves past that, the nudge and the disabled start should become unnecessary
+    (probably harmless): recheck then. Draft report (not submitted):
+    `../research/aquamarine-upstream-draft.md`.
   - New homes also get `omarchy_monitor_scale = 1` in `monitors.lua`. On a nested Wayland
     output (no physical size), `"auto"` picked 2.
   - `o_exec` takes Hyprland's socket from `hyprctl instances`, because Hyprland's own
@@ -165,6 +178,6 @@ keep-groups` in the host's `d_run_opts`).
 - Only one instance at a time per vkms card (single DRM master); `o_render` has no such
   limit.
 - Render-node mode: labwc composites Hyprland's frames once more (one extra GPU blit);
-  the startup workarounds depend on aquamarine's current behaviour (recheck after an
-  update); the host desktop wasn't watched during the tests; the vkms path wasn't
+  the startup workarounds depend on aquamarine 0.15.1's behaviour (recheck when Omarchy
+  ships aquamarine ≥ 0.16); the host desktop wasn't watched during the tests; the vkms path wasn't
   retested after the change (the test instance had no vkms card).
