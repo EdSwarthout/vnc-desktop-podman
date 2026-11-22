@@ -41,7 +41,9 @@ fd: it copies and encodes on the CPU (it looks for CUDA/NVENC and finds none).
   - Headless never calls `TakeDevice`, so that part is only for KMS.
 - **KMS only**: mutter wants a logind session ("Failed to find any matching session")
   and a udev `seat` tag on the card. `fake-run.sh` (as root) writes
-  `/run/systemd/{users,sessions,seats}` and `/run/udev/{data,tags}` for `card0` only,
+  `/run/systemd/{users,sessions,seats}` and `/run/udev/{data,tags}` for the vkms card only
+  (found in `/sys/class/drm`, or `fake-run.sh UID cardN`; it was `card0` on hwd23, and is
+  `card1` on the DGX Spark: see `../research/dgx-spark-gnome-vkms.md`),
   which also hides the host's other cards visible in `/sys`.
 - **Headless RDP** (`rdp-headless.sh`, 2026-11-22): `gnome-remote-desktop-daemon
   --headless` gives each client a virtual monitor of its own, so run `headless.sh` with

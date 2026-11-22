@@ -87,6 +87,36 @@ needs a parent compositor.
     lost. To debug, use the bare config with `debug { disable_logs = false }`, or
     `hyprctl rollinglog`.
 
+## DGX Spark (arm64, NVIDIA only): the results don't carry over
+
+The user's other host, a DGX Spark, has no Intel or AMD GPU (from `logs/dgx-spark-dri.log`
+in the main checkout, 2026-11-22, kernel `7.0.0-1025-nvidia`, aarch64, after `modprobe vkms`):
+- `card0` and `renderD128` are the NVIDIA GB10 (`000f:01:00.0`, PCI ID `10de:2e12`, driver
+  `nvidia`, modules `nvidia`, `nvidia_drm`); `card1` is vkms. The same names mean other
+  devices than on hwd23: there `renderD128` is the Intel iGPU, here the NVIDIA node.
+- A normal Ubuntu `gnome` (Flashback) instance with Claude Code ran there (2026-11-20),
+  as everywhere else: Xvnc, rendered on the CPU, no `/dev/dri` needed.
+- **Omarchy**: not possible on the Spark at all, with or without `o_render`. The rootfs
+  comes from the x86 ISO, and Arch Linux is amd64-only in this repo.
+- **vkms** works there too: `card1`, and `o_run`'s vkms lookup would find it. But the only
+  vkms user here is Omarchy, which is amd64 only. GNOME's KMS mode (`../wayland/kms.sh`)
+  would be the exception, still rendered on the CPU: plan in
+  [dgx-spark-gnome-vkms.md](dgx-spark-gnome-vkms.md). `fake-run.sh` now tags the vkms card
+  it finds instead of a fixed `card0`.
+- **GNOME `--headless`** (Ubuntu, arm64) runs without any GPU (llvmpipe). On the NVIDIA
+  render node, Ubuntu's Mesa has no driver: the container needs NVIDIA's userspace for
+  the host driver's exact version (GL/EGL libraries, the GBM backend
+  `nvidia-drm_gbm.so`, the EGL vendor files). The usual way is the NVIDIA container
+  toolkit's CDI (`--device nvidia.com/gpu=all`, graphics capability), which mounts the
+  host's libraries so the versions match. DGX OS normally ships the toolkit.
+- Not verified:
+  - what mutter does with an nvidia-drm render node and no NVIDIA GBM library
+    (software fallback or failure);
+  - whether CDI works with rootless podman there;
+  - how a nested instance would get the libraries from its outer instance.
+- So `--device /dev/dri/renderD128` mustn't go into a shared `d_run_opts` that both hosts
+  use: on the Spark it passes the NVIDIA node.
+
 ## Prerequisite (on the host)
 
 The instance where this runs needs the render node: add
@@ -148,8 +178,9 @@ keep-groups`, no other `/dev/dri` node):
 - **Throughput**: the GPU renders, but wayvnc/RFB (and RDP) still copy and encode frames
   on the CPU. That's still a large gain over llvmpipe for compositing and Chromium.
 - **Shared GPU**: the iGPU is shared with the host desktop; a GPU hang could affect both.
-- **NVIDIA `renderD129`**: possible in principle, but the image needs the exact host driver
-  version's userspace (`nvidia-utils`, its GBM backend). Not worth it now.
+- **NVIDIA `renderD129`** (hwd23's RTX 4090; on the DGX Spark the NVIDIA node is
+  `renderD128`): possible in principle, but the container needs the host driver's exact
+  userspace (see the DGX Spark section). Not tried.
 - **SR-IOV VFs**: only if this is ever wanted inside VMs. They need host i915 SR-IOV support
   and firmware; not needed for containers.
 - **Two compositors for Omarchy**: labwc composites Hyprland's output once more (one
