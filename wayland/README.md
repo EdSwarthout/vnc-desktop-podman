@@ -1,24 +1,26 @@
 # GNOME Shell on Wayland (Ubuntu 26.04): experiment notes
 
 Status: **experiment only**, 2026-11-17; GPU render node and headless RDP 2026-11-22.
-Nothing here is wired into a Containerfile,
-`env.rc` or the tests. The scripts are the ones used in the throwaway instance, with
-`/home/ed/shell` and uid 1001 hard-coded.
+Nothing here is wired into a Containerfile, `env.rc` or the tests. The scripts are the
+ones used in the throwaway instance, with `/home/ed/shell` and uid 1001 hard-coded.
+Tested on amd64 (hwd23) only. KMS mode on the DGX Spark (arm64) is planned:
+`../research/dgx-spark-gnome-vkms.md`.
 
 ## Result
 
 GNOME Shell 50.1 (Wayland-only) runs in a nested Ubuntu instance without systemd, two ways.
 Both were seen over RDP with Chrome running as a Wayland client and mouse input working.
 
-| | `--headless` (recommended) | KMS on vkms `card0` |
+| | `--headless` (recommended) | KMS on the vkms card |
 |---|---|---|
 | Script | `headless.sh` (`MOCK=1`) | `kms.sh` |
-| Host setup | none | `modprobe vkms`, `--device /dev/dri/card0` |
+| Host setup | none | `modprobe vkms`, `--device /dev/dri/<vkms card>` (`card0` on hwd23, `card1` on the DGX Spark) |
 | Root in the instance | none | fake `/run` files (`fake-run.sh`) |
 | Instances at once | any number | one (single DRM master: a second `SET_MASTER` gets EACCES) |
-| Resolution | `--virtual-monitor WxH` (1440x900 tested) | vkms's preferred 1024x768; switching not tried |
-| Screenshot | `headless.png` | `kms.png` |
-| GPU | any render node passed in (below) | none (vkms; CPU) |
+| Resolution | `MODE=WxH` → `--virtual-monitor` (default 1440x900); `MODE=`: none, the RDP client's monitor only | vkms's preferred 1024x768; switching not tried |
+| RDP | `rdp.sh` (mirrors the shell's monitor, keyring) or `rdp-headless.sh` (a monitor per client, no keyring) | `rdp.sh` |
+| Screenshot | `headless.png`, `headless-gpu.png` (render node, `rdp-headless.sh`) | `kms.png` |
+| GPU | a Mesa render node passed in (below) | none (vkms; CPU) |
 
 **With a GPU render node** (2026-11-22, Intel iGPU, instance with only
 `--device /dev/dri/renderD128 --group-add keep-groups`): `--headless` uses it with no
@@ -29,6 +31,24 @@ Mesa Intel(R) Graphics (RPL-S)`, GL 4.6. Two shells ran at once on the same node
 gnome-shell's fd on the node gains i915 render time as the screen changes
 (`/proc/<pid>/fdinfo/*`, `drm-engine-render`). gnome-remote-desktop holds no render-node
 fd: it copies and encodes on the CPU (it looks for CUDA/NVENC and finds none).
+This needs a GPU with a Mesa driver (Intel, AMD). On the DGX Spark, `renderD128` is the
+NVIDIA GB10: the container would need the host driver's NVIDIA userspace (e.g. via the
+NVIDIA container toolkit's CDI). Not tried. See the DGX Spark section of
+`../research/intel-igpu-render-node.md`.
+
+## Files
+
+| File | What |
+|---|---|
+| `headless.sh` | private system bus (+ `MOCK=1`: mock logind), `gnome-shell --headless`; `MODE`, `T` (timeout, s) |
+| `kms.sh` | the same with `--display-server` on the vkms card (after `fake-run.sh`) |
+| `fake-run.sh` | as root: `/run/systemd` and `/run/udev` files for KMS mode; tags the vkms card it finds (or `fake-run.sh UID cardN`) |
+| `mock-logind.py` | logind stand-in on the private bus (session, seat, `TakeDevice` with DRM master) |
+| `system-bus.conf` | config for the user's private system bus |
+| `rdp.sh` | pipewire, wireplumber, gnome-remote-desktop mirroring the shell's monitor (credentials in the keyring) |
+| `rdp-headless.sh` | the same in gnome-remote-desktop's headless mode (a monitor per client, credentials in a file) |
+| `env.sh` | `. env.sh` for Wayland clients (`WAYLAND_DISPLAY`, session bus) |
+| `stop.sh` | ends everything the scripts started |
 
 ## What it needs
 
@@ -91,9 +111,12 @@ In a nested `u2604cc:gnome` instance, each via `podman exec … setpriv --inh-ca
 - Whether an empty private bus is usable enough to skip the mock.
 - The nested instance's Flashback session ended once during the tests ("The X session
   cleanly exited"); cause unknown.
-- vkms note: `card0` is vkms only by load order (simpledrm had minor 0 at boot); the
-  `/dev/dri/by-path` link for it is stale. GPU acceleration needs a render node
-  (`renderD128`), not vkms (done for `--headless`, above).
+- vkms note: the vkms card's number is only load order (on hwd23 `card0`, because
+  simpledrm had minor 0 at boot; the `/dev/dri/by-path` link for it is stale; on the DGX
+  Spark `card1`). GPU acceleration needs a render node, not vkms (done for `--headless`
+  on hwd23's Intel iGPU, above).
+- arm64 (DGX Spark): not run yet; KMS mode planned in
+  `../research/dgx-spark-gnome-vkms.md`.
 - The GPU runs were in a throwaway container from `u2604cc:base` + `gnome-shell
   gnome-remote-desktop pipewire wireplumber python3-dbus python3-gi dbus-x11 openssl` and,
   as a test client, `freerdp3-x11 xvfb scrot xdotool`. They were not run in a nested
