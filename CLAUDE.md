@@ -88,6 +88,25 @@ See `README.md` for user-facing setup.
   `google-antigravity` from PyPI (wheels carry the `localharness` runtime) in a
   user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`. Instances `agNu`, ports
   7200+N / 6380+N. `antigravity/README.md`.
+- `omarchy/` — experiment on the `research` branch, standalone (own `Containerfile` and
+  `env.rc`, prefix `o_`; build context is `omarchy/`, not the repo root; not in the
+  top-level `env.rc`, `start.sh` or `d_test`). Omarchy (Arch + Hyprland) from
+  `omarchy/rootfs.tar` (`extract.sh` makes it from the ISO; `o_build` needs only the tar),
+  stages `rootfs` → `wayvnc` → `omarchy`, tagged `omarchy:<stage>`, amd64 only (x86 ISO).
+  `omarchy-session` (CMD) runs Hyprland without logind (`LIBSEAT_BACKEND=noop`), then
+  `wayvnc -r` on its output (port 5900) and websockify/noVNC (6080); exits when any of them
+  does. Instances `ccNo` (nested `<this>_No`), home `$o_dir/omarchyN` (nested
+  `~/Containers/<name>`), ports 7100+N / 6280+N. `o_run` has two device modes:
+  - default: the host's **vkms** card (`_o_vkms_card` finds it; any other card refused
+    unless `o_card=… o_allow_gpu=1`). Hyprland's DRM backend drives it, CPU rendering, one
+    instance per card;
+  - `o_render=1` (or `o_render=renderDNNN`): a **GPU render node** only, never a card node.
+    Hardware GL (Mesa iris on hwd23's Intel iGPU `renderD128`), any number of instances on
+    one GPU. `omarchy-session` picks this mode when there's no `/dev/dri/card*` (or
+    `OMARCHY_RENDER=/dev/dri/renderDN`). See "Omarchy render-node mode" below.
+  `o_exec` (session environment; takes Hyprland's socket from `hyprctl instances`),
+  `o_screenshot`, `o_vnc`, `o_novnc`, `o_logs`, `o_rm`. `omarchy/README.md`; background in
+  `research/intel-igpu-render-node.md`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
   `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
   a `!` line here.**
@@ -286,6 +305,27 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   D-Bus activation file deleted: gsettings alone (lock off, lockdown) don't
   stop an explicit lock request, and the user has no password to unlock with.
   **Any new desktop stage: check that the screen can't lock.**
+- **Omarchy render-node mode** (`omarchy/`, `o_render`): Hyprland 0.56.2 / aquamarine
+  0.15.1 can't use a render node by itself. aquamarine's DRM backend enumerates `card*`
+  only (`AQ_NO_KMS_REQUIREMENT` is for a card node without outputs, as in a VM), and its
+  headless backend has no allocator. So:
+  - **labwc** runs headless on the node (`WLR_BACKENDS=headless WLR_RENDER_DRM_DEVICE=…`,
+    `labwc -C /etc/omarchy-vnc/labwc`: `omarchy/labwc-rc.xml`, no decorations, windows
+    maximized, no bindings; output set to `$VNC_RESOLUTION` with `wlr-randr`). Hyprland is
+    its client on aquamarine's Wayland backend; output `WAYLAND-1` follows labwc's
+    maximized window. Not sway or weston: aquamarine binds `xdg_wm_base` v6 and they
+    offer 5 (upstream #398, closed as not planned). wayvnc talks to Hyprland, not labwc,
+    so labwc gets no input.
+  - **Startup workarounds** for two aquamarine 0.15.1 bugs (fixed in v0.16.0; recheck when
+    Omarchy updates): `WAYLAND-1` starts disabled (runtime rule), a `wtype` key on labwc
+    makes Hyprland flush its first commit, then `hyprctl reload` enables the output. A
+    later eval/keyword rule doesn't re-enable a disabled output. Then the session waits
+    for the output to be active before starting wayvnc.
+  - New homes get `omarchy_monitor_scale = 1` in `monitors.lua` (`"auto"` picks 2 on a
+    nested Wayland output).
+  - Never put a real card node into `o_run` this way: hwd23's Intel `card1` drives the
+    host's monitors. On the DGX Spark, `renderD128` is the NVIDIA GB10 (no Mesa driver;
+    see the research notes), and Omarchy can't run there anyway (amd64 only).
 - **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome and
   OpenCode `.deb` URLs use `dpkg --print-architecture`, which is the image's,
   also in a cross build under emulation; upstream publishes both arches for
