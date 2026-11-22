@@ -454,4 +454,6 @@ re-run `apt-get upgrade` or re-download Chrome unless the Containerfile changed.
 (`--pull=newer --no-cache`); then `d_run` each instance. Both pass extra
 arguments through to `podman build`, and end with a summary: the time taken and,
 per apt step that ran, how much apt downloaded of what it needed (`0 B/105 MB`:
-all of it came from the shared cache).
+all of it came from the shared cache). Each image gets a short
+`org.opencontainers.image.description` label (`podman image inspect`), from
+`d_descs` in `env.rc`; `d_description="…" d_build` sets your own.

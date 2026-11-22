@@ -44,7 +44,10 @@ See `README.md` for user-facing setup.
   instance: no `--replace`, no ports, no `start.sh`, no ambient caps), `d_rm [-f] [N]` (container **and home**; asks
   unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
   apt step that ran, `0 B/…` = all from the shared cache; for archlinux, pacman
-  "downloaded/installed" per step). `_d_wait_ready` waits
+  "downloaded/installed" per step) and labels the image
+  `org.opencontainers.image.description` ("<distro>: <stage text>" from
+  `d_desc_distros`/`d_descs`, keyed `<distro>:<stage>` or `<stage>`; `d_description`
+  overrides): **a new stage or distro gets an entry there**. `_d_wait_ready` waits
   for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
 - `chrome/Containerfile` — `d_distro=chrome`, one stage `canary`, tagged
   `u2604chrome:canary`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
@@ -406,7 +409,7 @@ image has no apt lists. Everything below uses the nested podman.
    provide a replacement and document it.
 6. A screenshot tool that can save to a file without a dialog (`scrot` if
    the desktop's own can't), and a branch for it in `tests/screenshot.sh`.
-7. `env.rc`: add to `d_targets_<distro>` and the `d_target` comment.
+7. `env.rc`: add to `d_targets_<distro>`, the `d_target` comment and `d_descs`.
 8. Docs: README (intro sentence, file table, Stages text and table, Screenshots
    item, `d_all` list), this file (intro, Files, design decisions), and
    `docs/<distro>/` (`d_distro=<distro> d_screenshots N <name>`, plus a section in `docs/README.md`).
