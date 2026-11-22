@@ -41,6 +41,10 @@ Omarchy/Hyprland (`../omarchy/`)?
      headless (pixman) with wayvnc on it, and Hyprland runs as a *nested Wayland client*
      of it (Aquamarine's Wayland backend). Hyprland probably still needs a render node:
      it still renders with EGL, and a pixman parent takes only shm buffers.
+     **Partly tested** (2026-11-22, [intel-igpu-render-node.md](intel-igpu-render-node.md)):
+     with a render node it works, but the parent must be labwc, not sway. aquamarine
+     needs `xdg_wm_base` v6, and sway 1.12 offers only v5. Two aquamarine startup bugs
+     need workarounds. A pixman parent without a render node is still untested.
   3. **Without a render node** there's still vkms: on Debian 13 that means building the
      module out of tree (DKMS).
 

@@ -4,8 +4,9 @@
 # Stages (omarchy/env.rc: o_build STAGE, tagged omarchy:<stage>):
 #   rootfs  - the installed Omarchy system + user, pacman usable; headless
 #   wayvnc  - rootfs + wayvnc; a bare Hyprland (own minimal config, foot) on a DRM
-#             device (vkms card passed with --device), shown by wayvnc on port 5900
-#             and noVNC (websockify) on 6080
+#             device, shown by wayvnc on port 5900 and noVNC (websockify) on 6080.
+#             The device is a vkms card, or a GPU render node (renderD*, hardware
+#             GL): then Hyprland runs nested in a headless labwc on it
 #   omarchy - wayvnc + Omarchy's own desktop (its Hyprland config and Quickshell shell),
 #             with shims for the systemd/uwsm pieces it expects
 
@@ -64,8 +65,13 @@ ENV VNC_RESOLUTION=1440x900
 
 # OMARCHY_ALLOW_DIRECT_PACMAN: Omarchy's pre-transaction hook otherwise refuses a
 # pacman -Syu that doesn't come from `omarchy update`.
+# labwc, wlr-randr, wtype: omarchy-session's render-node mode (labwc is Hyprland's
+# headless parent on the GPU's render node; see omarchy-session).
 RUN OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm --needed \
+    labwc \
     wayvnc \
+    wlr-randr \
+    wtype \
     && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
     && rm -rf /var/lib/pacman/sync/*
 
@@ -82,6 +88,7 @@ RUN python -m venv /opt/websockify \
     && test -f /usr/share/novnc/vnc.html
 
 COPY --chmod=644 hyprland-vnc.conf /etc/omarchy-vnc/hyprland.conf
+COPY --chmod=644 labwc-rc.xml /etc/omarchy-vnc/labwc/rc.xml
 COPY --chmod=755 omarchy-session /usr/local/bin/omarchy-session
 
 USER ${USERID}

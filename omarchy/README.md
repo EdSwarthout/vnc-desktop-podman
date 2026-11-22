@@ -1,15 +1,22 @@
 # Omarchy in rootless podman, headless, over wayvnc
 
-Status: **experiment**, 2026-11-17. Standalone: its own `Containerfile` and `env.rc`
-(prefix `o_`), not wired into the top-level `env.rc`, `start.sh` or `d_test`.
-Tested in a nested podman inside an Ubuntu instance (cc8u) with the host's vkms card
-passed through.
+Status: **experiment**, 2026-11-17; GPU render-node mode added 2026-11-22. Standalone:
+its own `Containerfile` and `env.rc` (prefix `o_`), not wired into the top-level `env.rc`,
+`start.sh` or `d_test`. Tested in a nested podman inside an Ubuntu instance: with the
+host's vkms card passed through (cc8u), and with only the Intel iGPU's render node
+`renderD128` (cc1u).
 
 ## Result
 
 Omarchy 4.5.0 (ISO 2026.11.05): Hyprland 0.56 and Omarchy's Quickshell shell (bar, menus,
 notifications, lock) run without systemd, on a **vkms** DRM card, rendered on the CPU,
 and are shown and driven over **wayvnc** (no password, port 7100+N).
+
+**On a GPU render node** (`o_render=1`, 2026-11-22) the same desktop renders on the Intel
+iGPU (Mesa iris; Hyprland's fd on `renderD128` shows i915 render-engine time) instead of
+the CPU, and **several instances run at once** on one GPU. A vkms card allows only one.
+Hyprland can't drive a render node itself, so it runs nested in a headless labwc there
+(see "Render-node mode" below).
 
 | Stage | What | Screenshot |
 |---|---|---|
@@ -25,6 +32,10 @@ Checked:
 - **Locking**: a lock (Super+Ctrl+L, `omarchy-system-lock`) unlocks with **any character +
   Enter**. A bare Enter does nothing, because the lock screen ignores an empty field.
 - **sudo**: refused.
+- **Render-node mode** (Omarchy desktop, cc1u, only `renderD128`): two instances at once
+  over wayvnc/noVNC, each 1440x900 at scale 1. Super+Return, Super+Space and typing work
+  over RFB. Log Out stops the container. Four Log Out + `podman start` cycles all came
+  back. The bare `wayvnc`-stage config (`-e OMARCHY_DESKTOP=`) works too.
 
 ## Running it
 
@@ -34,6 +45,7 @@ omarchy/extract.sh                     # ISO -> omarchy/rootfs.tar (~12 GB scrat
 source omarchy/env.rc
 o_build omarchy                        # builds rootfs -> wayvnc -> omarchy
 o_target=omarchy o_run 1               # container ccNo (nested: <instance>_No), home omarchyN
+o_target=omarchy o_render=1 o_run 2    # or on the GPU render node renderD128 (no vkms needed)
 o_vnc                                  # or any VNC client on <host>:7101
 o_novnc                                # browser: http://<host>:6281/vnc.html?autoconnect=1
 o_screenshot /tmp/s.png; o_exec CMD…; o_logs; o_rm [-f] 1
@@ -51,9 +63,11 @@ the Omarchy logo in the bar, or `o_exec omarchy-menu toggle root`. Super chords 
 (meta+space, meta+Return, or noVNC's Windows-key toggle); the extension is fine for
 looking and clicking.
 
-The ISO must be loop-mounted at `omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`), and
-`/dev/dri/<vkms card>` must be visible where `o_run` runs. A nested run needs the outer
-instance created with that device.
+`extract.sh` needs the ISO loop-mounted at `omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`);
+`o_build` needs only `omarchy/rootfs.tar`. `o_run` needs `/dev/dri/<vkms card>` (or, with
+`o_render`, `/dev/dri/renderD128`) where it runs. A nested run needs the outer instance
+created with that device (render node: `--device /dev/dri/renderD128 --group-add
+keep-groups` in the host's `d_run_opts`).
 
 ## What it needs, and why
 
@@ -102,6 +116,33 @@ instance created with that device.
   - `uwsm stop` and `systemctl poweroff|reboot`: `hypr-exit`. Suspend does nothing.
   - `hypr-exit`: `hyprctl dispatch 'hl.dsp.exit()'` (Lua configs reject plain `exit`),
     or else `exit`.
+- **Render-node mode** (`omarchy-session`, when there's no `/dev/dri/card*` or
+  `OMARCHY_RENDER=/dev/dri/renderDN` is set; `o_render=1` passes only the render node).
+  Found in `../research/intel-igpu-render-node.md`:
+  - Hyprland 0.56.2 / aquamarine 0.15.1 can't use a render node by itself
+    (`CBackend::create() failed!`). aquamarine's DRM backend takes only `card*` nodes;
+    `AQ_NO_KMS_REQUIREMENT` is for a card node without outputs, as in a VM; the headless
+    backend has no allocator.
+  - So **labwc** runs headless on the render node (`WLR_BACKENDS=headless
+    WLR_RENDER_DRM_DEVICE=…`, config `/etc/omarchy-vnc/labwc/rc.xml`: no decorations,
+    every window maximized, no bindings). Its output is set to `$VNC_RESOLUTION` with
+    `wlr-randr`. Hyprland runs as labwc's client on aquamarine's Wayland backend, which
+    renders on the same node. Its output `WAYLAND-1` takes the size of labwc's
+    maximized window. wayvnc still talks to Hyprland, so labwc gets no input.
+    Not sway or weston: aquamarine binds `xdg_wm_base` v6, and they offer 5.
+  - Two aquamarine startup bugs, worked around in the session. (1) The output's first
+    commit stays unflushed, and the output isn't announced until labwc sends an event:
+    a `wtype` key on labwc is that event. (2) It renders before acking the first
+    configure, and labwc drops it for that: `WAYLAND-1` starts disabled (runtime rule)
+    and `hyprctl reload` enables it. A later eval/keyword rule doesn't re-enable a
+    disabled output; reload drops the runtime rule and the config's rules apply.
+  - New homes also get `omarchy_monitor_scale = 1` in `monitors.lua`. On a nested Wayland
+    output (no physical size), `"auto"` picked 2.
+  - `o_exec` takes Hyprland's socket from `hyprctl instances`, because Hyprland's own
+    environment holds labwc's `WAYLAND_DISPLAY` here.
+  - labwc logs `Failed to get backend DRM FD` once (the headless backend has none; the
+    renderer has the node). Omarchy's config turns Hyprland's logs off. To see the GPU at
+    work: `o_exec sh -c 'cat /proc/$(pgrep -x Hyprland)/fdinfo/* | grep drm-engine-render'`.
 - **Lock PAM service** `/etc/pam.d/omarchy-lock-password` = `pam_permit`. Omarchy's
   installer normally writes it as root (`omarchy-apply-lock`). Without it PAM's
   `other` denies everything, and a locked session could never be unlocked (the user
@@ -121,4 +162,9 @@ instance created with that device.
 - Testing from a desktop inside an instance: that desktop may take Super+Space itself.
   TigerVNC's Ctrl+Alt+G keyboard grab on the outer viewer passes every Super chord but
   Super+Space (see "Super key" above); for scripted checks, send keys straight over RFB.
-- Only one instance at a time per vkms card (single DRM master).
+- Only one instance at a time per vkms card (single DRM master); `o_render` has no such
+  limit.
+- Render-node mode: labwc composites Hyprland's frames once more (one extra GPU blit);
+  the startup workarounds depend on aquamarine's current behaviour (recheck after an
+  update); the host desktop wasn't watched during the tests; the vkms path wasn't
+  retested after the change (the test instance had no vkms card).

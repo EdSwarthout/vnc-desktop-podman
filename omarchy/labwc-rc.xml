@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- labwc as the headless parent of Hyprland in omarchy-session's render-node mode
+     (labwc -C /etc/omarchy-vnc/labwc): Hyprland's window fills the output, with no
+     decorations, gaps or borders. wayvnc talks to Hyprland, not to labwc, so labwc gets
+     no input; the empty key and mouse bindings only replace labwc's defaults. -->
+<labwc_config>
+  <core>
+    <decoration>client</decoration>
+    <gap>0</gap>
+  </core>
+  <theme>
+    <border><width>0</width></border>
+  </theme>
+  <keyboard>
+    <keybind key="XF86_Ungrab"><action name="None"/></keybind>
+  </keyboard>
+  <mouse>
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/></mousebind>
+    </context>
+  </mouse>
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="no">
+      <action name="Maximize"/>
+    </windowRule>
+  </windowRules>
+</labwc_config>

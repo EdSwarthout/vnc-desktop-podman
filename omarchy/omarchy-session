@@ -2,14 +2,30 @@
 # Entrypoint of the wayvnc stage: Hyprland on a DRM device without logind/seatd
 # (libseat's noop backend opens the device directly), then wayvnc on its output.
 # Exits when either one does, so the container stops.
+#
+# The device is either
+#  - a card node (/dev/dri/card*; vkms): Hyprland's DRM backend drives it, rendered on
+#    the CPU, one compositor per card (DRM master); or
+#  - when there's no card node, or OMARCHY_RENDER=/dev/dri/renderDN is set, a GPU
+#    render node: hardware GL, any number of instances on one GPU. Hyprland can't use a
+#    render node by itself (aquamarine's DRM backend takes card nodes only, and its
+#    headless backend has no allocator), so labwc runs headless on the node and Hyprland
+#    runs as its client (aquamarine's Wayland backend, output WAYLAND-1, which follows
+#    labwc's maximized window: labwc's output is set to $VNC_RESOLUTION). wayvnc still
+#    talks to Hyprland. Not sway or weston: aquamarine binds xdg_wm_base v6, they offer 5.
 set -u
 export XDG_RUNTIME_DIR=/tmp/xdg-$(id -u)
 mkdir -p -m 700 "$XDG_RUNTIME_DIR"
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Hyprland
 export LIBSEAT_BACKEND=${LIBSEAT_BACKEND:-noop}
-export AQ_DRM_DEVICES=${AQ_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}
+render=${OMARCHY_RENDER:-}
+if [ -z "$render" ]; then
+    export AQ_DRM_DEVICES=${AQ_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}
+    [ -n "$AQ_DRM_DEVICES" ] || { unset AQ_DRM_DEVICES; render=$(ls /dev/dri/renderD* 2>/dev/null | head -1); }
+fi
 unset WAYLAND_DISPLAY DISPLAY HYPRLAND_INSTANCE_SIGNATURE
-[ -n "$AQ_DRM_DEVICES" ] || { echo "no /dev/dri/card*: run with --device /dev/dri/cardN" >&2; exit 1; }
+[ -n "${AQ_DRM_DEVICES:-}$render" ] \
+    || { echo "no /dev/dri/card* or renderD*: run with --device /dev/dri/<node>" >&2; exit 1; }
 
 # omarchy stage (OMARCHY_DESKTOP=1): Omarchy's own config from the home, which gets
 # /etc/skel's files on its first boot (the home is a volume, so useradd's copy is
@@ -21,11 +37,14 @@ if [ "${OMARCHY_DESKTOP:-}" = 1 ]; then
     export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
     if [ ! -e ~/.config/hypr/hyprland.lua ]; then
         cp -an /etc/skel/. ~/
-        # the output's mode follows $VNC_RESOLUTION (vkms "prefers" 1024x768), and GTK's
-        # X11 scale is 1 (Omarchy's 2 is for HiDPI laptops)
+        # the output's mode follows $VNC_RESOLUTION (vkms "prefers" 1024x768), its scale and
+        # GTK's X11 scale are 1 (Omarchy's 2 is for HiDPI laptops; "auto" picks 2 for a
+        # nested Wayland output, which has no physical size)
         m=~/.config/hypr/monitors.lua
         grep -q 'mode = "preferred"' $m && grep -q '^local omarchy_gdk_scale = 2$' $m \
+            && grep -q '^local omarchy_monitor_scale = "auto"$' $m \
             && sed -i -e '/^hl\.monitor/s/mode = "preferred"/mode = os.getenv("VNC_RESOLUTION") or "preferred"/' \
+                      -e 's/^local omarchy_monitor_scale = "auto"$/local omarchy_monitor_scale = 1/' \
                       -e 's/^local omarchy_gdk_scale = 2$/local omarchy_gdk_scale = 1/' $m \
             || echo "omarchy-session: $m has changed, mode/scale not set" >&2
         mkdir -p ~/.local/state/omarchy/indicators
@@ -46,7 +65,35 @@ fi
 # podman exec, via /proc/<pid>/environ)
 eval "$(dbus-launch --sh-syntax)"
 
-Hyprland --config "$cfg" &
+# a monitor rule: hyprlang configs take `keyword`, Lua ones (Omarchy's) only `eval`
+mon_rule() {   # OUTPUT disable|MODE
+    case $cfg:$2 in
+        *.lua:disable) hyprctl eval "hl.monitor({ output = \"$1\", disabled = true })";;
+        *.lua:*) hyprctl eval "hl.monitor({ output = \"$1\", mode = \"$2\", position = \"0x0\", scale = 1 })";;
+        *:disable) hyprctl keyword monitor "$1,disable";;
+        *) hyprctl keyword monitor "$1,$2,0x0,1";;
+    esac
+}
+wl_sockets() { (cd "$XDG_RUNTIME_DIR" && ls | grep -E '^wayland-[0-9]+$'); }
+
+parent= pids=()
+if [ -n "$render" ]; then
+    WLR_BACKENDS=headless WLR_RENDER_DRM_DEVICE=$render WLR_LIBINPUT_NO_DEVICES=1 \
+        labwc -C /etc/omarchy-vnc/labwc &
+    pids+=($!)
+    for _ in $(seq 50); do
+        parent=$(wl_sockets | head -1); [ -n "$parent" ] && break
+        kill -0 "${pids[0]}" 2>/dev/null || { echo "labwc exited" >&2; exit 1; }
+        sleep 0.2
+    done
+    [ -n "$parent" ] || { echo "labwc's socket didn't appear" >&2; exit 1; }
+    [ -n "${VNC_RESOLUTION:-}" ] \
+        && WAYLAND_DISPLAY=$parent wlr-randr --output HEADLESS-1 --custom-mode "$VNC_RESOLUTION"
+    echo "omarchy-session: render node $render: Hyprland nested in labwc ($parent)"
+    WAYLAND_DISPLAY=$parent Hyprland --config "$cfg" &
+else
+    Hyprland --config "$cfg" &
+fi
 hypr=$!
 
 sock=
@@ -59,17 +106,33 @@ done
 [ -n "$sock" ] || { echo "Hyprland socket didn't appear" >&2; kill "$hypr"; exit 1; }
 HYPRLAND_INSTANCE_SIGNATURE=$(basename "$(dirname "$sock")")
 export HYPRLAND_INSTANCE_SIGNATURE
-export WAYLAND_DISPLAY=$(cd "$XDG_RUNTIME_DIR" && ls wayland-* | grep -v lock | head -1)
+export WAYLAND_DISPLAY=$(wl_sockets | grep -vx "$parent" | head -1)
 
-out=$(hyprctl monitors -j | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)
-echo "Hyprland: $HYPRLAND_INSTANCE_SIGNATURE, $WAYLAND_DISPLAY, output $out"
-# the output's mode: hyprlang configs take `keyword`, Lua ones (Omarchy's) only `eval`
-if [ -n "${VNC_RESOLUTION:-}" ]; then
-    case $cfg in
-        *.lua) hyprctl eval "hl.monitor({ output = \"$out\", mode = \"$VNC_RESOLUTION\", position = \"0x0\", scale = 1 })";;
-        *) hyprctl keyword monitor "$out,$VNC_RESOLUTION,0x0,1";;
-    esac
+if [ -n "$render" ]; then
+    # Two aquamarine 0.15.1 Wayland-backend bugs:
+    #  1. its output's first commit isn't flushed, and the output is only announced to
+    #     Hyprland when the parent sends an event; a quiet headless labwc sends none, so a
+    #     key from a virtual keyboard (a seat capability change) is the nudge;
+    #  2. it renders on xdg_toplevel.configure before acking xdg_surface.configure, and
+    #     labwc drops the client for that ("xdg_surface has never been configured") if the
+    #     monitor is enabled by then. So it starts disabled and is enabled once acked:
+    #     by a config reload, which drops the runtime rule (a later eval/keyword rule for
+    #     the output doesn't re-enable it), so the config's own rules apply again.
+    out=WAYLAND-1
+    mon_rule "$out" disable >/dev/null
+    WAYLAND_DISPLAY=$parent wtype -k Shift_L
+    for _ in $(seq 50); do hyprctl -j monitors all | grep -q "\"$out\"" && break; sleep 0.1; done
+    sleep 0.5
+    hyprctl reload >/dev/null
+    # wayvnc needs the output enabled ("No such output" otherwise)
+    for _ in $(seq 100); do hyprctl -j monitors | grep -q "\"$out\"" && break; sleep 0.1; done
+    [ -n "${VNC_RESOLUTION:-}" ] && mon_rule "$out" "$VNC_RESOLUTION" >/dev/null
+else
+    out=$(hyprctl monitors -j | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1)
+    # the output's mode (an eval is undone by Omarchy's config reloads: see monitors.lua above)
+    [ -n "${VNC_RESOLUTION:-}" ] && mon_rule "$out" "$VNC_RESOLUTION" >/dev/null
 fi
+echo "Hyprland: $HYPRLAND_INSTANCE_SIGNATURE, $WAYLAND_DISPLAY, output $out"
 
 # -r: draw the pointer into the frames (the hardware cursor plane isn't captured, so
 # a VNC client showed none); WAYVNC_OPTS= (empty) turns it off
@@ -84,8 +147,8 @@ fi
 websockify --web=/usr/share/novnc "$listen" localhost:5900 &
 web=$!
 
-wait -n -p done "$hypr" "$vnc" "$web"
-case $done in "$hypr") w=Hyprland;; "$vnc") w=wayvnc;; *) w=websockify;; esac
+wait -n -p done "$hypr" "$vnc" "$web" "${pids[@]}"
+case $done in "$hypr") w=Hyprland;; "$vnc") w=wayvnc;; "$web") w=websockify;; *) w=labwc;; esac
 echo "$w exited"
-kill "$hypr" "$vnc" "$web" 2>/dev/null
+kill "$hypr" "$vnc" "$web" "${pids[@]}" 2>/dev/null
 wait
