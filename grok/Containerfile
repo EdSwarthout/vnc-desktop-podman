@@ -1,0 +1,40 @@
+ARG BASE=localhost/u2604cc:lxqt
+
+# Grok (d_distro=grok, https://x.ai/cli): Ubuntu's lxqt stage
+# (../ubuntu/Containerfile: LXQt, Google Chrome, TigerVNC/noVNC, nested podman) plus
+# Grok Build, the grok CLI/TUI. The base is that locally built image, so d_build
+# builds it first. The build context is the repo root. One stage, tagged u2604grok:lxqt:
+#   lxqt - lxqt + install_grok (Grok Build CLI); session is LXQt
+# See README.md here.
+
+# ---------------------------------------------------------------------------------------
+# Stage "lxqt": Ubuntu's lxqt + Grok
+FROM ${BASE} AS lxqt
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# fd-find, fzf: finding and picking files, for the agent's shell and yours
+# featherpad: a GUI text editor (LXQt's), to look at and edit what the agent wrote
+# zstd: Grok's installer prefers a .zst binary (it falls back to gzip)
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fd-find \
+    featherpad \
+    fzf \
+    zstd \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Grok Build CLI (grok): run install_grok as the user at runtime, like install_claude.
+# xAI's installer puts it in ~/.grok/bin (home volume) and puts that dir first on PATH
+# in ~/.bashrc, so it persists and updates itself (`grok update`). Arguments go to the
+# installer (a version X.Y.Z). GROK_CHANNEL (stable|alpha|enterprise) is an env var.
+RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://x.ai/cli/install.sh | bash -s -- "$@"\n' \
+        > /usr/local/bin/install_grok \
+    && chmod +x /usr/local/bin/install_grok
+
+USER ${USERID}

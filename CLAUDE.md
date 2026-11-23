@@ -3,8 +3,8 @@
 Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
 or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
 Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages),
-and an OpenCode image on Ubuntu's LXQt (`opencode/`), and a Google Antigravity image
-on Ubuntu's LXQt (`antigravity/`).
+and an OpenCode image on Ubuntu's LXQt (`opencode/`), a Google Antigravity image
+on Ubuntu's LXQt (`antigravity/`), and a Grok image on Ubuntu's LXQt (`grok/`).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -88,6 +88,13 @@ See `README.md` for user-facing setup.
   `google-antigravity` from PyPI (wheels carry the `localharness` runtime) in a
   user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`. Instances `agNu`, ports
   7200+N / 6380+N. `antigravity/README.md`.
+- `grok/Containerfile` — `d_distro=grok`, one stage `lxqt`, tagged
+  `u2604grok:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[grok]="ubuntu lxqt"`)
+  + `install_grok` (run by the user, like `install_claude`: xAI's
+  `https://x.ai/cli/install.sh` → `~/.grok/bin`, self-updating, first on PATH via
+  `.bashrc`; a version argument or `GROK_CHANNEL`); plus `fd-find`, `fzf`,
+  `featherpad`, `zstd`. Instances `gkNu` (`d_name0s`/`d_letters`; nested
+  `<this>_gkNu`), ports 7250+N / 6430+N. `grok/README.md`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
   `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
   a `!` line here.**
@@ -336,9 +343,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
   Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
-  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, so every distro's instance N can run at once. A distro
+  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, grok 7250+N / 6430+N, so every distro's instance N can run at once. A distro
   can have its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`,
-  nested `<this instance>_oc1u`; antigravity `ag1u`.
+  nested `<this instance>_oc1u`; antigravity `ag1u`; grok `gk1u`.
   `d_select N` keeps only N; `_d_names` works out name, home and ports from
   the current `d_distro` in every function that needs them (via
   `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.

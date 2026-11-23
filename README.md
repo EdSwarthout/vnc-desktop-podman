@@ -3,8 +3,9 @@
 A rootless-podman container that runs an XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon desktop
 on Ubuntu 26.04, GNOME on Debian 13 (trixie), or Openbox on Arch Linux, over VNC/noVNC,
 with Google Chrome (Chromium on Arch), nested rootless podman and `install_claude` for
-Claude Code. There are also images for [Chrome automation](chrome/README.md) and
-[OpenCode](opencode/README.md) and [Google Antigravity](antigravity/README.md). Smaller stages (headless, or VNC with just an xterm)
+Claude Code. There are also images for [Chrome automation](chrome/README.md),
+[OpenCode](opencode/README.md), [Google Antigravity](antigravity/README.md) and
+[Grok](grok/README.md). Smaller stages (headless, or VNC with just an xterm)
 are built from the same `Containerfile` (`ubuntu/`, `debian/` or `archlinux/`).
 Each instance keeps its home directory on the host, so settings, browser profile
 and tools installed there survive rebuilds.
@@ -23,6 +24,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `opencode/`     | [OpenCode](https://opencode.ai): `Containerfile` (`d_distro=opencode`: Ubuntu's `lxqt` stage + OpenCode Desktop and the `opencode` terminal UI, stage `lxqt`) and a [README](opencode/README.md) |
 | `antigravity/`  | [Google Antigravity](https://antigravity.google): `Containerfile` (`d_distro=antigravity`: Ubuntu's `lxqt` stage + the Antigravity App, its Python SDK and `install_agy` for the CLI, stage `lxqt`) and a [README](antigravity/README.md) |
+| `grok/`         | [Grok Build](https://x.ai/cli): `Containerfile` (`d_distro=grok`: Ubuntu's `lxqt` stage + `install_grok` for the `grok` CLI, stage `lxqt`) and a [README](grok/README.md) |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
@@ -30,7 +32,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 ## Requirements
 
-- Linux host, amd64 or arm64 (Ubuntu, Debian and the Chrome and OpenCode images; Arch Linux is
+- Linux host, amd64 or arm64 (Ubuntu, Debian and the Chrome, OpenCode, Antigravity and Grok images; Arch Linux is
   amd64 only, and `env.rc` leaves it out on arm64), `podman` (rootless).
 - Optional: `vncviewer` (TigerVNC) on the host for `d_vnc`; otherwise any
   browser works via noVNC.
@@ -66,7 +68,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
      ```
      On a client, mount them at the same paths under that client's `$d_dir`,
      or set `d_aptcaches[ubuntu]=…` / `d_aptcaches[debian]=…` in `.env`.
-     The `chrome`, `opencode` and `antigravity` images have no cache of their own: they build on
+     The `chrome`, `opencode`, `antigravity` and `grok` images have no cache of their own: they build on
      Ubuntu's stages and use `apt-cache-ubuntu`.
 
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
@@ -228,6 +230,7 @@ differently; see item 4 of "Inside the container"):
 | archlinux | N     | `ccNa`         | `$d_dir/archccN`    | 7050+N          | 6230+N            |
 | opencode | N      | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N      | 6330+N            |
 | antigravity | N   | `agNu`         | `$d_dir/u2604antigravityN` | 7200+N   | 6380+N            |
+| grok     | N      | `gkNu`         | `$d_dir/u2604grokN`     | 7250+N      | 6430+N            |
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` at the time of each command, so after `d_select 1`,
@@ -260,7 +263,7 @@ current image; the home dir is kept.
 
 **Your own files in new homes:** put them in `ubuntu/user_files/`,
 `debian/user_files/` or `archlinux/user_files/` (gitignored; `chrome`,
-`opencode` and `antigravity` use Ubuntu's), laid out as in the home, e.g. `.bashrc`,
+`opencode`, `antigravity` and `grok` use Ubuntu's), laid out as in the home, e.g. `.bashrc`,
 `.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
 image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
 and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
@@ -441,6 +444,11 @@ Antigravity App in the menu (Development), its Python SDK (`google-antigravity`)
 venv on the PATH, and `install_agy` for the `agy` CLI (instances `agNu`, VNC 7200+N,
 noVNC 6380+N). The image builds on amd64 and arm64.
 See [antigravity/README.md](antigravity/README.md).
+
+**Grok:** `d_distro=grok d_target=lxqt d_build`, then `d_select N;
+d_distro=grok d_target=lxqt d_run` gives Ubuntu's LXQt desktop with `install_grok`
+for the Grok Build CLI (`grok`) (instances `gkNu`, VNC 7250+N, noVNC 6430+N). The
+image builds on amd64 and arm64. See [grok/README.md](grok/README.md).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.
