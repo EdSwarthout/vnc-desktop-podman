@@ -92,7 +92,9 @@ See `README.md` for user-facing setup.
   `u2604grok:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[grok]="ubuntu lxqt"`)
   + `install_grok` (run by the user, like `install_claude`: xAI's
   `https://x.ai/cli/install.sh` → `~/.grok/bin`, self-updating, first on PATH via
-  `.bashrc`; a version argument or `GROK_CHANNEL`); plus `fd-find`, `fzf`,
+  `.bashrc`; latest version, or a version argument, or `GROK_CHANNEL`; sets `SHELL`
+  from passwd when unset, as the installer picks the rc file by it; removes the
+  installer's `agent` links); plus `fd-find`, `fzf`,
   `featherpad`, `zstd`. Instances `gkNu` (`d_name0s`/`d_letters`; nested
   `<this>_gkNu`), ports 7250+N / 6430+N. `grok/README.md`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only

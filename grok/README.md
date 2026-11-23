@@ -25,12 +25,17 @@ Ubuntu child `<this instance>_Nu`.
 
 ## What's in it
 
-- **`install_grok`**: run it as yourself, like `install_claude`. It installs Grok
-  Build with xAI's installer (`https://x.ai/cli/install.sh`) into `~/.grok/bin` (on
-  the home volume, updates itself) and puts that directory first on your PATH in
-  `~/.bashrc`. From the next shell on, `grok` is that copy. Arguments go to the
-  installer, e.g. `install_grok 0.1.42`. `GROK_CHANNEL=alpha install_grok` picks
-  the alpha channel (default: stable). After that, `grok update` keeps it current.
+- **`install_grok`**: run it as yourself, like `install_claude` (in a terminal on the
+  desktop or with `d_exec`). It installs the latest version of Grok Build with xAI's
+  installer (`https://x.ai/cli/install.sh`) into `~/.grok/bin` (on the home volume,
+  updates itself) and puts that directory first on your PATH in `~/.bashrc`. From the
+  next shell on, `grok` is that copy. A version argument installs that version instead
+  (`install_grok X.Y.Z`); `GROK_CHANNEL=alpha install_grok` picks the alpha channel
+  (default: stable). After that, `grok update` keeps it current. xAI's installer also
+  links the binary as `agent` (in `~/.grok/bin`, and in `~/.local/bin` if `~/.grok/bin`
+  isn't on PATH yet); `install_grok` removes those links, as `agent` is too generic a
+  name to put first on PATH. Run `grok`. `grok update` links `~/.grok/bin/agent`
+  again (`rm ~/.grok/bin/agent`, or run `install_grok` instead of `grok update`).
 - **`grok`** (the terminal UI and CLI): run it in a project directory. On first
   launch it opens Google Chrome in the instance to sign in (`grok login --device-auth`
   if there is no browser; `export XAI_API_KEY=…` for CI). `grok -p "…"` is headless.

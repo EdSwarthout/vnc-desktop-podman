@@ -32,9 +32,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Grok Build CLI (grok): run install_grok as the user at runtime, like install_claude.
 # xAI's installer puts it in ~/.grok/bin (home volume) and puts that dir first on PATH
 # in ~/.bashrc, so it persists and updates itself (`grok update`). Arguments go to the
-# installer (a version X.Y.Z). GROK_CHANNEL (stable|alpha|enterprise) is an env var.
-RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://x.ai/cli/install.sh | bash -s -- "$@"\n' \
-        > /usr/local/bin/install_grok \
-    && chmod +x /usr/local/bin/install_grok
+# installer (a version X.Y.Z; default the latest). GROK_CHANNEL (stable|alpha|enterprise)
+# is an env var.
+# - The installer picks the rc file to edit from $SHELL, which podman exec doesn't set
+#   (then it edits nothing): fall back to the passwd entry's shell.
+# - It also links the binary as `agent`, a generic name to put first on PATH: removed.
+COPY --chmod=755 <<'EOF' /usr/local/bin/install_grok
+#!/bin/bash
+set -ex
+export SHELL="${SHELL:-$(getent passwd "$(id -u)" | cut -d: -f7)}"
+curl -fsSL https://x.ai/cli/install.sh | bash -s -- "$@"
+rm -f "$HOME/.grok/bin/agent"
+if [ "$(readlink "$HOME/.local/bin/agent")" = "$HOME/.grok/bin/agent" ]; then
+    rm -f "$HOME/.local/bin/agent"
+fi
+EOF
 
 USER ${USERID}
