@@ -104,7 +104,9 @@ in the main checkout, 2026-11-22, kernel `7.0.0-1025-nvidia`, aarch64, after `mo
   CPU (Mesa gallium, llvmpipe), 1024x768, over RDP with mouse input. `fake-run.sh` found
   `card1` by itself; mutter opened only `/dev/dri/card1`. Details in
   [dgx-spark-gnome-vkms.md](dgx-spark-gnome-vkms.md).
-- **GNOME `--headless`** (Ubuntu, arm64) runs without any GPU (llvmpipe). On the NVIDIA
+- **GNOME `--headless`** (Ubuntu, arm64) runs without any GPU (llvmpipe): tested
+  2026-11-22, with no `/dev/dri` in the instance, both RDP ways, Chrome as a Wayland
+  client ([dgx-spark-gnome-vkms.md](dgx-spark-gnome-vkms.md), "Headless mode"). On the NVIDIA
   render node, Ubuntu's Mesa has no driver: the container needs NVIDIA's userspace for
   the host driver's exact version (GL/EGL libraries, the GBM backend
   `nvidia-drm_gbm.so`, the EGL vendor files). The usual way is the NVIDIA container

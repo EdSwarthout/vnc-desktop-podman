@@ -29,11 +29,30 @@ working (a click on the app-grid button opened the grid: `../wayland/kms-arm64.p
   showed the certificate and its fingerprint, and the connection worked. The daemon's
   `ZINK: vkCreateInstance failed` and `failed to create dri2 screen` are harmless (it
   falls back to the CPU). xfreerdp3 warns that its NSC codec has no NEON version yet.
-- **Not checked here**: Chrome as a Wayland client (it was on hwd23); resolution change;
-  the optional `MOCK=1 MODE= headless.sh` comparison.
+- **Not checked in KMS mode**: Chrome as a Wayland client (done in headless mode below);
+  resolution change.
 - `d_run_opts` is a bash array: step 1's `d_run_opts="$d_run_opts …"` passed a broken
   argument. Use `d_select N; d_run_opts+=(--device /dev/dri/card1 --group-add
   keep-groups); d_target=gnome d_run` (step 1 corrected below).
+
+## Headless mode (same day, for comparison)
+
+A new nested `u2604cc:gnome` instance with **no `/dev/dri`** at all (no `--device`), the
+same packages, no root step. Both ways from `../wayland/README.md` work as on hwd23:
+- **A**: `MOCK=1 T=3000 headless.sh` (virtual monitor 1440x900) + `rdp.sh` (mirrors it):
+  mutter logs `Created surfaceless renderer without GPU` and `Added virtual monitor
+  Meta-0`; Shell maps `libgallium` (llvmpipe). Over RDP the full Shell at 1440x900.
+  `rdp.sh` printed the same "certificate is invalid" line as in KMS mode, and the
+  connection worked anyway.
+- **B**: `MOCK=1 MODE= T=3000 headless.sh` (no monitor of its own) + `rdp-headless.sh`:
+  the client's `/size:1280x800` became the Shell's only monitor
+  (`../wayland/headless-arm64.png`). Credentials in the GKeyFile fallback ("No TPM
+  device found"), as on hwd23.
+- **Chrome** (`google-chrome-stable --ozone-platform=wayland`, arm64 build) showed as a
+  Wayland client in both ways; a click on it went through and left the overview. It logs
+  `drmGetDevices2() has not found any devices` (no `/dev/dri`) and renders anyway.
+- So on the Spark headless needs nothing from the host, and any number of instances can
+  run it. KMS mode gives no advantage there (also CPU, fixed 1024x768, one per card).
 
 ## Question
 
@@ -107,7 +126,7 @@ the Spark. This plan covers KMS mode only, to compare.
 - Results into the DGX Spark section of
   [intel-igpu-render-node.md](intel-igpu-render-node.md) and into `../wayland/README.md`
   (KMS column: arm64 tested, card number).
-- Optional comparison: `MOCK=1 MODE= headless.sh` + `rdp-headless.sh` in the same
-  instance, which needs no vkms.
+- Optional comparison: `MOCK=1 MODE= headless.sh` + `rdp-headless.sh`, which needs no
+  vkms. Done: "Headless mode" above.
 - Later, separately: GNOME headless on the NVIDIA render node via the NVIDIA container
   toolkit's CDI (see the DGX Spark section).

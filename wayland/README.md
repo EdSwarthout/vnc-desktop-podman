@@ -3,7 +3,7 @@
 Status: **experiment only**, 2026-11-17; GPU render node and headless RDP 2026-11-22.
 Nothing here is wired into a Containerfile, `env.rc` or the tests. The scripts are the
 ones used in the throwaway instance, with `/home/ed/shell` and uid 1001 hard-coded.
-Tested on amd64 (hwd23); KMS mode also on arm64 (DGX Spark, 2026-11-22:
+Tested on amd64 (hwd23) and arm64 (DGX Spark, 2026-11-22, both modes:
 `../research/dgx-spark-gnome-vkms.md`).
 
 ## Result
@@ -19,9 +19,9 @@ Both were seen over RDP with Chrome running as a Wayland client and mouse input 
 | Instances at once | any number | one (single DRM master: a second `SET_MASTER` gets EACCES) |
 | Resolution | `MODE=WxH` → `--virtual-monitor` (default 1440x900); `MODE=`: none, the RDP client's monitor only | vkms's preferred 1024x768; switching not tried |
 | RDP | `rdp.sh` (mirrors the shell's monitor, keyring) or `rdp-headless.sh` (a monitor per client, no keyring) | `rdp.sh` |
-| Screenshot | `headless.png`, `headless-gpu.png` (render node, `rdp-headless.sh`) | `kms.png`, `kms-arm64.png` (DGX Spark) |
+| Screenshot | `headless.png`, `headless-gpu.png` (render node, `rdp-headless.sh`), `headless-arm64.png` (DGX Spark, `rdp-headless.sh`) | `kms.png`, `kms-arm64.png` (DGX Spark) |
 | GPU | a Mesa render node passed in (below) | none (vkms; CPU) |
-| Tested on | amd64 | amd64 (vkms `card0`), arm64 (DGX Spark, vkms `card1`) |
+| Tested on | amd64 (CPU and Intel render node), arm64 (DGX Spark, CPU) | amd64 (vkms `card0`), arm64 (DGX Spark, vkms `card1`) |
 
 **With a GPU render node** (2026-11-22, Intel iGPU, instance with only
 `--device /dev/dri/renderD128 --group-add keep-groups`): `--headless` uses it with no
@@ -116,8 +116,10 @@ In a nested `u2604cc:gnome` instance, each via `podman exec … setpriv --inh-ca
   simpledrm had minor 0 at boot; the `/dev/dri/by-path` link for it is stale; on the DGX
   Spark `card1`). GPU acceleration needs a render node, not vkms (done for `--headless`
   on hwd23's Intel iGPU, above).
-- arm64 (DGX Spark): KMS mode works the same as on hwd23 (2026-11-22, same package list,
-  GNOME Shell 50.1; `../research/dgx-spark-gnome-vkms.md`). `--headless` not run there yet.
+- arm64 (DGX Spark): both modes work the same as on hwd23 (2026-11-22, same package
+  list, GNOME Shell 50.1, CPU rendering; `../research/dgx-spark-gnome-vkms.md`).
+  `--headless` there ran with no `/dev/dri` at all, both RDP ways, Chrome as a Wayland
+  client. The NVIDIA render node is still untried.
 - The GPU runs were in a throwaway container from `u2604cc:base` + `gnome-shell
   gnome-remote-desktop pipewire wireplumber python3-dbus python3-gi dbus-x11 openssl` and,
   as a test client, `freerdp3-x11 xvfb scrot xdotool`. They were not run in a nested
