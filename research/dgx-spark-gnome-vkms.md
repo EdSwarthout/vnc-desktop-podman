@@ -1,7 +1,39 @@
 # GNOME Shell KMS mode on vkms, on the DGX Spark (arm64)
 
-Status: **planned, not started** (2026-11-22). Needs the DGX Spark: this session (cc1u on
-hwd23) can't reach it.
+Status: **done, works** (2026-11-22, cc1u on the DGX Spark, kernel `7.0.0-1025-nvidia`,
+aarch64). Results below; the plan follows unchanged except where marked.
+
+## Result
+
+Yes, the same as on hwd23. GNOME Shell 50.1 ran as a display server on vkms `card1` in a
+nested `u2604cc:gnome` instance (`cc1u_1u`), seen over RDP at 1024x768, mouse input
+working (a click on the app-grid button opened the grid: `../wayland/kms-arm64.png`).
+- **Prerequisites**: the instance had only `card1` under `/dev/dri` (`226:1`, vkms
+  under `/sys/devices/faux/vkms/`; `card0` is the NVIDIA GB10 and isn't passed in), and a
+  nested container opened it (`OPEN-OK`). `u2604cc:base` has no tag of its own in the
+  nested store, so the open test used `u2604cc:chrome`.
+- **Build**: `u2604cc:gnome` built on arm64 in 9m12s, all `.deb`s from the shared cache.
+- **Packages**: all of `wayland/README.md`'s list exists on arm64 with the same versions as
+  amd64's (127 new packages; `gnome-shell` 50.1, `gnome-remote-desktop` 50.2, `freerdp3`
+  3.32.2). Nothing missing.
+- **`fake-run.sh`**: printed `seat0 card: card1 (226:1)` without being told the card.
+- **mutter**: `mock-logind: TakeDevice 226 1 /dev/dri/card1`, `Added device
+  '/dev/dri/card1' (vkms) using atomic mode setting`, `Created gbm renderer`, `GPU
+  /dev/dri/card1 selected as primary`; no `SET_MASTER` error, no other card mentioned.
+  The Shell process mapped `libgallium-26.0.8` (llvmpipe; there's no Mesa driver for the
+  GB10, and vkms has no GPU). Ran until `stop.sh`, no `gnome-shell rc=`. The other log
+  lines are the same warnings as on hwd23 (no RealtimeKit, GDM, polkit, ibus, GeoClue,
+  evolution; document portal can't mount FUSE).
+- **RDP** (`rdp.sh`): listened on 3389. `grdctl rdp set-tls-cert` printed `BIO_new
+  failed for certificate` / "RDP server certificate is invalid" once, but the status
+  showed the certificate and its fingerprint, and the connection worked. The daemon's
+  `ZINK: vkCreateInstance failed` and `failed to create dri2 screen` are harmless (it
+  falls back to the CPU). xfreerdp3 warns that its NSC codec has no NEON version yet.
+- **Not checked here**: Chrome as a Wayland client (it was on hwd23); resolution change;
+  the optional `MOCK=1 MODE= headless.sh` comparison.
+- `d_run_opts` is a bash array: step 1's `d_run_opts="$d_run_opts …"` passed a broken
+  argument. Use `d_select N; d_run_opts+=(--device /dev/dri/card1 --group-add
+  keep-groups); d_target=gnome d_run` (step 1 corrected below).
 
 ## Question
 
@@ -46,8 +78,9 @@ the Spark. This plan covers KMS mode only, to compare.
 
 1. **Nested GNOME instance**, as on hwd23 (its `vnc-session` writes the passwordless
    keyring that `rdp.sh`'s credentials go into): `source ./env.rc; d_target=gnome
-   d_build`, then `d_run_new` and `d_run_opts="$d_run_opts --device /dev/dri/card1
-   --group-add keep-groups" d_target=gnome d_run` (nested name e.g. `cc1u_2u`).
+   d_build`, then `d_run_new`, `d_select N`, then `d_run_opts+=(--device /dev/dri/card1
+   --group-add keep-groups); d_target=gnome d_run` (`d_run_opts` is an array; nested name
+   e.g. `cc1u_1u`).
    This is the first `u2604cc:gnome` build on arm64 with the Wayland packages.
 2. **Packages**, as root in it (`wayland/README.md`'s list):
    `apt-get update && apt-get install -y --no-install-recommends gnome-shell gnome-session
@@ -69,6 +102,8 @@ the Spark. This plan covers KMS mode only, to compare.
 
 ## Then
 
+(Done: results in both files below.)
+
 - Results into the DGX Spark section of
   [intel-igpu-render-node.md](intel-igpu-render-node.md) and into `../wayland/README.md`
   (KMS column: arm64 tested, card number).
@@ -76,8 +111,3 @@ the Spark. This plan covers KMS mode only, to compare.
   instance, which needs no vkms.
 - Later, separately: GNOME headless on the NVIDIA render node via the NVIDIA container
   toolkit's CDI (see the DGX Spark section).
-
-## Resuming
-
-On the Spark, after the prerequisites, in the research worktree:
-> Continue research/dgx-spark-gnome-vkms.md

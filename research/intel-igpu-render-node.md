@@ -100,9 +100,10 @@ in the main checkout, 2026-11-22, kernel `7.0.0-1025-nvidia`, aarch64, after `mo
   comes from the x86 ISO, and Arch Linux is amd64-only in this repo.
 - **vkms** works there too: `card1`, and `o_run`'s vkms lookup would find it. But the only
   vkms user here is Omarchy, which is amd64 only. GNOME's KMS mode (`../wayland/kms.sh`)
-  would be the exception, still rendered on the CPU: plan in
-  [dgx-spark-gnome-vkms.md](dgx-spark-gnome-vkms.md). `fake-run.sh` now tags the vkms card
-  it finds instead of a fixed `card0`.
+  is the exception: it **works** on the Spark (2026-11-22), as on hwd23, rendered on the
+  CPU (Mesa gallium, llvmpipe), 1024x768, over RDP with mouse input. `fake-run.sh` found
+  `card1` by itself; mutter opened only `/dev/dri/card1`. Details in
+  [dgx-spark-gnome-vkms.md](dgx-spark-gnome-vkms.md).
 - **GNOME `--headless`** (Ubuntu, arm64) runs without any GPU (llvmpipe). On the NVIDIA
   render node, Ubuntu's Mesa has no driver: the container needs NVIDIA's userspace for
   the host driver's exact version (GL/EGL libraries, the GBM backend

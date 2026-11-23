@@ -3,8 +3,8 @@
 Status: **experiment only**, 2026-11-17; GPU render node and headless RDP 2026-11-22.
 Nothing here is wired into a Containerfile, `env.rc` or the tests. The scripts are the
 ones used in the throwaway instance, with `/home/ed/shell` and uid 1001 hard-coded.
-Tested on amd64 (hwd23) only. KMS mode on the DGX Spark (arm64) is planned:
-`../research/dgx-spark-gnome-vkms.md`.
+Tested on amd64 (hwd23); KMS mode also on arm64 (DGX Spark, 2026-11-22:
+`../research/dgx-spark-gnome-vkms.md`).
 
 ## Result
 
@@ -19,8 +19,9 @@ Both were seen over RDP with Chrome running as a Wayland client and mouse input 
 | Instances at once | any number | one (single DRM master: a second `SET_MASTER` gets EACCES) |
 | Resolution | `MODE=WxH` → `--virtual-monitor` (default 1440x900); `MODE=`: none, the RDP client's monitor only | vkms's preferred 1024x768; switching not tried |
 | RDP | `rdp.sh` (mirrors the shell's monitor, keyring) or `rdp-headless.sh` (a monitor per client, no keyring) | `rdp.sh` |
-| Screenshot | `headless.png`, `headless-gpu.png` (render node, `rdp-headless.sh`) | `kms.png` |
+| Screenshot | `headless.png`, `headless-gpu.png` (render node, `rdp-headless.sh`) | `kms.png`, `kms-arm64.png` (DGX Spark) |
 | GPU | a Mesa render node passed in (below) | none (vkms; CPU) |
+| Tested on | amd64 | amd64 (vkms `card0`), arm64 (DGX Spark, vkms `card1`) |
 
 **With a GPU render node** (2026-11-22, Intel iGPU, instance with only
 `--device /dev/dri/renderD128 --group-add keep-groups`): `--headless` uses it with no
@@ -62,8 +63,8 @@ NVIDIA container toolkit's CDI). Not tried. See the DGX Spark section of
 - **KMS only**: mutter wants a logind session ("Failed to find any matching session")
   and a udev `seat` tag on the card. `fake-run.sh` (as root) writes
   `/run/systemd/{users,sessions,seats}` and `/run/udev/{data,tags}` for the vkms card only
-  (found in `/sys/class/drm`, or `fake-run.sh UID cardN`; it was `card0` on hwd23, and is
-  `card1` on the DGX Spark: see `../research/dgx-spark-gnome-vkms.md`),
+  (found in `/sys/class/drm`, or `fake-run.sh UID cardN`; it was `card0` on hwd23, and
+  `card1` on the DGX Spark, where it found it by itself: see `../research/dgx-spark-gnome-vkms.md`),
   which also hides the host's other cards visible in `/sys`.
 - **Headless RDP** (`rdp-headless.sh`, 2026-11-22): `gnome-remote-desktop-daemon
   --headless` gives each client a virtual monitor of its own, so run `headless.sh` with
@@ -115,8 +116,8 @@ In a nested `u2604cc:gnome` instance, each via `podman exec … setpriv --inh-ca
   simpledrm had minor 0 at boot; the `/dev/dri/by-path` link for it is stale; on the DGX
   Spark `card1`). GPU acceleration needs a render node, not vkms (done for `--headless`
   on hwd23's Intel iGPU, above).
-- arm64 (DGX Spark): not run yet; KMS mode planned in
-  `../research/dgx-spark-gnome-vkms.md`.
+- arm64 (DGX Spark): KMS mode works the same as on hwd23 (2026-11-22, same package list,
+  GNOME Shell 50.1; `../research/dgx-spark-gnome-vkms.md`). `--headless` not run there yet.
 - The GPU runs were in a throwaway container from `u2604cc:base` + `gnome-shell
   gnome-remote-desktop pipewire wireplumber python3-dbus python3-gi dbus-x11 openssl` and,
   as a test client, `freerdp3-x11 xvfb scrot xdotool`. They were not run in a nested
