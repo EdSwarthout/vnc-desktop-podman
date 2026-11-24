@@ -27,7 +27,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `grok/`         | [Grok Build](https://x.ai/cli): `Containerfile` (`d_distro=grok`: Ubuntu's `lxqt` stage + `install_grok` for the `grok` CLI, stage `lxqt`) and a [README](grok/README.md) |
 | `t3code/`       | [T3 Code](https://t3.codes): `Containerfile` (`d_distro=t3code`: Ubuntu's `lxqt` stage + `install_t3code` for the `t3` CLI and its web GUI, stage `lxqt`) and a [README](t3code/README.md) |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
-| `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `canary`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
+| `chrome/`       | Chrome automation: `Containerfile` (`d_distro=chrome`: Ubuntu's `chrome` stage + Chrome Canary and browser tools, stage `devtools`), `env.rc` (`d_chrome`, `d_chrome_mcp`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
 | `.env`          | Your VNC password and local settings (not in git)             |
 | `<distro>/user_files/` | Your own files for new homes, e.g. a `.bashrc` (not in git; see [Run an instance](#run-an-instance)) |
 
@@ -111,7 +111,7 @@ so building one doesn't replace another.
 | `vnc`    | TigerVNC server/viewer, noVNC                               | `xterm`        |
 | `chrome` | Google Chrome (`--no-sandbox` wrapper), fonts (incl. CJK, emoji) | `xterm`        |
 | `xfce`   | XFCE, `xfce4-screenshooter`                                 | XFCE           |
-| `lxqt`   | LXQt with openbox, `screengrab`                             | LXQt           |
+| `lxqt`   | LXQt with openbox, `screengrab`, `featherpad`               | LXQt           |
 | `gnome`  | GNOME Flashback (gnome-panel, metacity, nautilus), `gnome-terminal`, `gnome-screenshot`, the Claude desktop app (`claude-desktop`) | GNOME Flashback |
 | `kde`    | KDE Plasma 6 (X11 session, `kwin-x11`), Dolphin, Konsole, System Settings, `spectacle` | Plasma |
 | `mate`   | MATE (mate-panel, marco, caja), `mate-terminal`, `scrot`    | MATE           |
@@ -303,6 +303,8 @@ which one exited.
    install_claude     # native installer → ~/.local/bin/claude
    claude
    ```
+   A new home's `~/.bashrc` puts `~/.local/bin` on PATH when it exists, so tools that
+   install there work in the next shell.
 
 2. **Set your git identity** (once per instance):
    ```bash
@@ -429,7 +431,7 @@ and home, alongside the instance if it is running (no published ports). It skips
 **Automate Chrome in an instance:** `d_chrome [URL...]` starts Chrome on the
 selected instance's desktop with its DevTools (remote debugging) port open, inside
 the instance only, and `d_chrome_mcp` prints the command that lets Claude Code drive
-that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_pages`). `d_distro=chrome d_target=canary` is an image for this: Ubuntu's
+that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_pages`). `d_distro=chrome d_target=devtools` is an image for this: Ubuntu's
 `chrome` stage plus Chrome Canary, Puppeteer, Playwright (Node and Python, with
 `uv`), their MCP servers and Lighthouse (instances `ccNc`, VNC 7000+N, noVNC 6180+N).
 See [chrome/README.md](chrome/README.md) for all of it and the other options.

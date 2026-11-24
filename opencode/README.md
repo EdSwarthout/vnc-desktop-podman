@@ -47,9 +47,9 @@ Ubuntu child `<this instance>_Nu`.
   puts that directory first on your PATH in `~/.bashrc`. From the next shell on,
   `opencode` is that copy. Arguments go to opencode's installer, e.g.
   `install_opencode --version 2.3.2`.
-- `fd-find` (`fdfind`), `fzf`: find and pick files, for the agent's shell and yours.
-  `ripgrep`, `git`, `gh`, `jq`, `nodejs`/`npm` and `python3` come with the base.
-- `featherpad`: a GUI text editor, to look at and edit what the agent wrote.
+- From the base: `fd-find` (`fdfind`), `fzf`, `ripgrep`, `git`, `gh`, `jq`,
+  `nodejs`/`npm`, `python3`; from the `lxqt` stage: `featherpad`, a GUI text editor, to
+  look at and edit what the agent wrote.
 
 ## Updates
 

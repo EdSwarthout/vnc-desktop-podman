@@ -39,9 +39,9 @@ Ubuntu child `<this instance>_Nu`.
 - **`grok`** (the terminal UI and CLI): run it in a project directory. On first
   launch it opens Google Chrome in the instance to sign in (`grok login --device-auth`
   if there is no browser; `export XAI_API_KEY=…` for CI). `grok -p "…"` is headless.
-- `fd-find` (`fdfind`), `fzf`: find and pick files, for the agent's shell and yours.
-  `ripgrep`, `git`, `gh`, `jq`, `nodejs`/`npm` and `python3` come with the base.
-- `featherpad`: a GUI text editor, to look at and edit what the agent wrote.
+- From the base: `fd-find` (`fdfind`), `fzf`, `ripgrep`, `git`, `gh`, `jq`,
+  `nodejs`/`npm`, `python3`; from the `lxqt` stage: `featherpad`, a GUI text editor, to
+  look at and edit what the agent wrote.
 
 ## Updates
 

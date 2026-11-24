@@ -18,37 +18,14 @@ USER root
 ARG USERID
 ARG USER_UID
 
-# fd-find, fzf: finding and picking files, for the agent's shell and yours
-# featherpad: a GUI text editor (LXQt's), to look at and edit what the agent wrote
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fd-find \
-    featherpad \
-    fzf \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
 # T3 Code CLI (t3): run install_t3code as the user at runtime, like install_claude.
 # T3's installer (sh, tar, sha256sum, curl: all in the base) unpacks a self-contained
 # release (~500 MB, no Node needed) into ~/.t3/runtime/versions/<version> and writes a
 # launcher ~/.local/bin/t3, both on the home volume; `t3 update` updates it. The latest
-# stable release, or T3CODE_VERSION / T3CODE_CHANNEL (stable|nightly) from the env.
-# The installer only prints a hint when ~/.local/bin isn't on PATH, and a fresh home's
-# .bashrc (from /etc/skel) doesn't add it: install_t3code appends a guarded block to
-# ~/.bashrc when the file doesn't mention .local/bin.
-COPY --chmod=755 <<'EOF' /usr/local/bin/install_t3code
-#!/bin/bash
-set -ex
-curl -fsSL https://t3.codes/install.sh | sh
-if ! grep -qs '\.local/bin' "$HOME/.bashrc"; then
-    cat >> "$HOME/.bashrc" <<'EOB'
-
-# ~/.local/bin on PATH (added by install_t3code, for t3)
-if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    export PATH="$HOME/.local/bin${PATH:+:${PATH}}"
-fi
-EOB
-fi
-EOF
+# stable release, or T3CODE_VERSION / T3CODE_CHANNEL (stable|nightly) from the env. The
+# home's .bashrc (from the base's /etc/skel) puts ~/.local/bin on PATH.
+RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://t3.codes/install.sh | sh\n' \
+        > /usr/local/bin/install_t3code \
+    && chmod +x /usr/local/bin/install_t3code
 
 USER ${USERID}

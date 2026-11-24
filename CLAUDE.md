@@ -50,8 +50,8 @@ See `README.md` for user-facing setup.
   `d_desc_distros`/`d_descs`, keyed `<distro>:<stage>` or `<stage>`; `d_description`
   overrides): **a new stage or distro gets an entry there**. `_d_wait_ready` waits
   for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
-- `chrome/Containerfile` — `d_distro=chrome`, one stage `canary`, tagged
-  `u2604chrome:canary`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
+- `chrome/Containerfile` — `d_distro=chrome`, one stage `devtools`, tagged
+  `u2604chrome:devtools`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
   `chrome` stage first: `d_parents[chrome]="ubuntu chrome"`, which also makes it use
   Ubuntu's apt cache) + `google-chrome-canary` (wrapper like stable's), Openbox +
   xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
@@ -70,8 +70,7 @@ See `README.md` for user-facing setup.
   --password-store=basic`, both `.desktop` files pointed at it), `opencode` = a symlink
   to the desktop's bundled CLI (`/opt/OpenCode/resources/opencode-cli`, one copy), and
   `install_opencode` (run by the user, like `install_claude`: opencode's own build in
-  `~/.opencode/bin`, self-updating, first on PATH via `.bashrc`); plus `fd-find`, `fzf`,
-  `featherpad`. The app's own updater can't install a `.deb` without root: rebuild. The
+  `~/.opencode/bin`, self-updating, first on PATH via `.bashrc`). The app's own updater can't install a `.deb` without root: rebuild. The
   app copies its CLI into the home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB)
   and runs `opencode-cli serve` from there; no switch found to stop that.
   Instances `ocNu` (`d_name0s`/`d_letters` in `env.rc`; nested `<this>_ocNu`), ports
@@ -95,16 +94,13 @@ See `README.md` for user-facing setup.
   `https://x.ai/cli/install.sh` → `~/.grok/bin`, self-updating, first on PATH via
   `.bashrc`; latest version, or a version argument, or `GROK_CHANNEL`; sets `SHELL`
   from passwd when unset, as the installer picks the rc file by it; removes the
-  installer's `agent` links); plus `fd-find`, `fzf`,
-  `featherpad`, `zstd`. Instances `gkNu` (`d_name0s`/`d_letters`; nested
+  installer's `agent` links). Instances `gkNu` (`d_name0s`/`d_letters`; nested
   `<this>_gkNu`), ports 7250+N / 6430+N. `grok/README.md`.
 - `t3code/Containerfile` — `d_distro=t3code`, one stage `lxqt`, tagged
   `u2604t3code:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[t3code]="ubuntu lxqt"`)
   + `install_t3code` (run by the user, like `install_claude`: `https://t3.codes/install.sh`
   → self-contained release in `~/.t3/runtime/versions/<v>` (~500 MB) + launcher
-  `~/.local/bin/t3`; `t3 update`; `T3CODE_VERSION`/`T3CODE_CHANNEL`; appends a guarded
-  `~/.local/bin` PATH block to `.bashrc` when it doesn't mention `.local/bin`, as the
-  installer only prints a hint); plus `fd-find`, `fzf`, `featherpad`. `t3` serves the GUI
+  `~/.local/bin/t3`; `t3 update`; `T3CODE_VERSION`/`T3CODE_CHANNEL`). `t3` serves the GUI
   on 127.0.0.1:3773 and prints a pairing URL (opens no browser here); `t3 up`/`t3
   service` fail (systemd lingering). Instances `tcNu` (`d_name0s`/`d_letters`; nested
   `<this>_tcNu`), ports 7300+N / 6480+N. `t3code/README.md`.
@@ -117,7 +113,7 @@ See `README.md` for user-facing setup.
   add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`: the
   image's binary if there is one, else `npx`). `d_chrome_bin=google-chrome-canary`
   for Canary. `d_devtools CMD...` runs the `chrome-devtools` CLI (same tools as the
-  MCP server; daemon in the instance, started on demand) in a `canary` instance.
+  MCP server; daemon in the instance, started on demand) in a `devtools` instance.
   Both get `_d_devtools_opts`: `--browserUrl`, no usage statistics, no CrUX,
   `--workspace=/home/<user>` (+ `d_devtools_opts`).
   `chrome/README.md` — the automation options compared, and what has been tried.
@@ -170,6 +166,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `$D_NAME` is set and the `.bashrc` doesn't mention it yet.
 - **Claude Code** is installed by the user at runtime via `install_claude`
   (native installer → `~/.local/bin`, self-updating). Not baked into the image.
+  Ubuntu's and Debian's `base` append a `~/.local/bin` PATH check to `/etc/skel/.bashrc`
+  (the skel only has it in `.profile`, which a terminal's bash doesn't read), so a new
+  home finds `claude`, `t3` and the like. Small CLI tools the agent images share
+  (`fd-find`, `fzf`, `zstd`) are in `base`; `featherpad` is in Ubuntu's `lxqt`.
 - **Shared apt caches**, one per distro (same file names, different
   contents), NFS-shared between machines: host `$d_dir/apt-cache-<distro>/archives`
   (`apt-cache-ubuntu`, `apt-cache-debian`), or

@@ -57,8 +57,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     catatonit \
     curl \
     emacs-nox \
+    fd-find \
     file \
     fuse-overlayfs \
+    fzf \
     gh \
     git \
     gnupg \
@@ -92,6 +94,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     wget \
     xz-utils \
     zip \
+    zstd \
     && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
@@ -105,6 +108,16 @@ RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
     && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
     && chmod 440 /etc/sudoers.d/${USERID} \
     && visudo -cf /etc/sudoers.d/${USERID}
+
+# A new home's .bashrc is /etc/skel's (start.sh's first boot), which leaves ~/.local/bin to
+# .profile, and a terminal's bash isn't a login shell: add it here too, since install_claude,
+# t3 and others put their commands there. The grep fails the build if the skel gets it.
+RUN ! grep -q '\.local/bin' /etc/skel/.bashrc \
+    && printf '%s\n' '' \
+        '# ~/.local/bin on PATH (also for non-login shells): install_claude, t3, … put commands there' \
+        'if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then' \
+        '    export PATH="$HOME/.local/bin${PATH:+:${PATH}}"' \
+        'fi' >> /etc/skel/.bashrc
 
 # Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
 # useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
@@ -269,10 +282,12 @@ USER root
 # load without it, so no LXQt app starts), lxqt-menu-data (the application menu; the
 # panel's menu button is missing without it), openbox (a window manager),
 # qt6-svg-plugins (SVG icons, e.g. the menu button's start-here-lxqt).
+# featherpad: a GUI text editor (LXQt's)
 # screengrab: tests/screenshot.sh
 # keep list sorted
 RUN apt-get update && apt-get install -y --no-install-recommends \
     breeze-icon-theme \
+    featherpad \
     libxcb-cursor0 \
     lxqt-core \
     lxqt-menu-data \

@@ -33,7 +33,7 @@ d_chrome https://example.com
 d_exec curl -s http://127.0.0.1:9222/json/list      # the open pages, as JSON
 d_chrome_mcp                                        # prints: claude mcp add chrome-cc1u -- podman exec -i cc1u …
 
-# with the browser image (d_distro=chrome d_target=canary):
+# with the browser image (d_distro=chrome d_target=devtools):
 d_devtools list_pages
 d_devtools navigate_page 1 --url https://example.com
 d_devtools take_snapshot 1                          # the page as an accessibility tree, with element uids
@@ -51,8 +51,8 @@ with `d_devtools_opts`, e.g. `d_devtools_opts=(--performanceCrux)` or `(--catego
 ## The browser image
 
 `d_distro=chrome` selects [`Containerfile`](Containerfile) here: Ubuntu's `chrome`
-stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `canary`, image
-`u2604chrome:canary`:
+stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `devtools`, image
+`u2604chrome:devtools`:
 
 - **Google Chrome Canary** (`google-chrome-canary`, from the apt repository that the
   stable Chrome set up), behind the same `--no-sandbox` wrapper as stable. Stable
@@ -79,13 +79,13 @@ stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `canary`, im
   (video from screenshots or the display).
 
 ```bash
-d_distro=chrome d_target=canary d_build      # builds ubuntu's chrome stage first
-d_select 1; d_distro=chrome d_target=canary d_run          # cc1c, VNC 7001, noVNC 6181
+d_distro=chrome d_target=devtools d_build    # builds ubuntu's chrome stage first
+d_select 1; d_distro=chrome d_target=devtools d_run        # cc1c, VNC 7001, noVNC 6181
 d_distro=chrome d_chrome_bin=google-chrome-canary d_chrome https://example.com
 d_distro=chrome d_exec node my-script.js     # a Puppeteer/Playwright script in the home
 cp chrome/search_screenshot.py "$d_home"/    # the example below
 d_distro=chrome d_exec python3 search_screenshot.py "rootless podman" -o search.png
-d_distro=chrome d_test 20 canary             # the usual checks
+d_distro=chrome d_test 20 devtools           # the usual checks
 ```
 The versions of Canary, the npm tools, `uv` and `playwright` are whatever is current
 when the layer is built; `d_build_fresh` renews them.
@@ -128,7 +128,7 @@ downloads.
 
 - `d_chrome` on a Ubuntu `gnome` instance (Chrome 157): the port answered, `/json/list`
   showed the pages, a second `d_chrome URL` opened in the same browser. Not run on Debian.
-- The headless check in `d_test`: passes on Ubuntu and Debian `gnome` and on `canary`.
+- The headless check in `d_test`: passes on Ubuntu and Debian `gnome` and on `devtools`.
 - The browser image: `d_test` passes all its checks. With Canary 160 started by
   `d_chrome`: a `puppeteer-core` script read the page and saved a page screenshot,
   `playwright-core` connected over CDP and read the title, and `chrome-devtools-mcp`

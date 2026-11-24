@@ -17,18 +17,6 @@ USER root
 ARG USERID
 ARG USER_UID
 
-# fd-find, fzf: finding and picking files, for the agent's shell and yours
-# featherpad: a GUI text editor (LXQt's), to look at and edit what the agent wrote
-# zstd: Grok's installer prefers a .zst binary (it falls back to gzip)
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fd-find \
-    featherpad \
-    fzf \
-    zstd \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
 # Grok Build CLI (grok): run install_grok as the user at runtime, like install_claude.
 # xAI's installer puts it in ~/.grok/bin (home volume) and puts that dir first on PATH
 # in ~/.bashrc, so it persists and updates itself (`grok update`). Arguments go to the
