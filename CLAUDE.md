@@ -4,7 +4,8 @@ Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, M
 or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
 Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages),
 and an OpenCode image on Ubuntu's LXQt (`opencode/`), a Google Antigravity image
-on Ubuntu's LXQt (`antigravity/`), and a Grok image on Ubuntu's LXQt (`grok/`).
+on Ubuntu's LXQt (`antigravity/`), a Grok image on Ubuntu's LXQt (`grok/`), and a
+T3 Code image on Ubuntu's LXQt (`t3code/`).
 See `README.md` for user-facing setup.
 
 ## Files
@@ -97,6 +98,16 @@ See `README.md` for user-facing setup.
   installer's `agent` links); plus `fd-find`, `fzf`,
   `featherpad`, `zstd`. Instances `gkNu` (`d_name0s`/`d_letters`; nested
   `<this>_gkNu`), ports 7250+N / 6430+N. `grok/README.md`.
+- `t3code/Containerfile` — `d_distro=t3code`, one stage `lxqt`, tagged
+  `u2604t3code:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[t3code]="ubuntu lxqt"`)
+  + `install_t3code` (run by the user, like `install_claude`: `https://t3.codes/install.sh`
+  → self-contained release in `~/.t3/runtime/versions/<v>` (~500 MB) + launcher
+  `~/.local/bin/t3`; `t3 update`; `T3CODE_VERSION`/`T3CODE_CHANNEL`; appends a guarded
+  `~/.local/bin` PATH block to `.bashrc` when it doesn't mention `.local/bin`, as the
+  installer only prints a hint); plus `fd-find`, `fzf`, `featherpad`. `t3` serves the GUI
+  on 127.0.0.1:3773 and prints a pairing URL (opens no browser here); `t3 up`/`t3
+  service` fail (systemd lingering). Instances `tcNu` (`d_name0s`/`d_letters`; nested
+  `<this>_tcNu`), ports 7300+N / 6480+N. `t3code/README.md`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
   `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
   a `!` line here.**
@@ -345,9 +356,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
   Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
-  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, grok 7250+N / 6430+N, so every distro's instance N can run at once. A distro
+  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, grok 7250+N / 6430+N, t3code 7300+N / 6480+N, so every distro's instance N can run at once. A distro
   can have its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`,
-  nested `<this instance>_oc1u`; antigravity `ag1u`; grok `gk1u`.
+  nested `<this instance>_oc1u`; antigravity `ag1u`; grok `gk1u`; t3code `tc1u`.
   `d_select N` keeps only N; `_d_names` works out name, home and ports from
   the current `d_distro` in every function that needs them (via
   `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.
