@@ -1,0 +1,72 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
+
+# XFCE desktop (d_target=xfce), on a distro's browser stage (Chrome, the CLI installers,
+# TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build picks the
+# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags
+# the image vnc-desktop-<distro>:xfce. The build context is the repo root.
+#   ubuntu - Ubuntu 26.04 + XFCE
+#   fedora - Fedora 45 + XFCE
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# xfce4-screenshooter: tests/screenshot.sh uses it
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xfce4 \
+    xfce4-screenshooter \
+    xfce4-terminal \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+RUN printf '#!/bin/sh\nexec startxfce4\n' > /usr/local/bin/vnc-session
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "fedora"
+FROM ${BASE} AS fedora
+USER root
+
+ARG USERID
+ARG USER_UID
+
+# Fedora has no xfce4 metapackage: XFCE's core by name (without the weak deps, and not
+# the xfce-desktop group, which brings NetworkManager, Bluetooth, abrt, …). No
+# xfce4-screensaver or light-locker: the user has no password to unlock a locked
+# screen; no xfce4-power-manager either (it locks on suspend).
+# adwaita-icon-theme, greybird-*-theme, desktop-backgrounds-compat: Fedora's XFCE look.
+# xfce4-screenshooter: tests/screenshot.sh
+# keep list sorted
+RUN dnf -y install \
+    Thunar \
+    adwaita-icon-theme \
+    desktop-backgrounds-compat \
+    greybird-dark-theme \
+    greybird-light-theme \
+    xfce4-appfinder \
+    xfce4-notifyd \
+    xfce4-panel \
+    xfce4-screenshooter \
+    xfce4-session \
+    xfce4-settings \
+    xfce4-terminal \
+    xfdesktop \
+    xfwm4 \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; }
+
+# xfce-polkit (required by xfce4-session) autostarts a PolicyKit agent, which fails
+# without a system bus (no systemd, no polkitd) and shows an error dialog on every
+# login: not started. The test fails the build if the entry moves.
+RUN printf '#!/bin/sh\nexec startxfce4\n' > /usr/local/bin/vnc-session \
+    && test -f /etc/xdg/autostart/xfce-polkit.desktop \
+    && rm /etc/xdg/autostart/xfce-polkit.desktop
+
+USER ${USERID}

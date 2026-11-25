@@ -1,7 +1,7 @@
 # Omarchy (https://omarchy.org/, Arch + Hyprland) in rootless podman, headless, over
 # wayvnc. Standalone experiment: see README.md. Build context is this directory.
 # rootfs.tar comes from the ISO's omarchy-root.img.zst via ./extract.sh.
-# Stages (omarchy/env.rc: o_build STAGE, tagged omarchy:<stage>):
+# Stages (container/omarchy/env.rc: o_build STAGE, tagged omarchy:<stage>):
 #   rootfs  - the installed Omarchy system + user, pacman usable; headless
 #   wayvnc  - rootfs + wayvnc; a bare Hyprland (own minimal config, foot) on a DRM
 #             device, shown by wayvnc on port 5900 and noVNC (websockify) on 6080.

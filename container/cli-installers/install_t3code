@@ -1,0 +1,10 @@
+#!/bin/bash
+# install_t3code: the T3 Code CLI (t3, a web GUI for coding agents such as Claude Code),
+# run as the user. T3's installer (sh, tar, sha256sum, curl) unpacks a self-contained
+# release (~500 MB, no Node needed) into ~/.t3/runtime/versions/<version> and writes a
+# launcher ~/.local/bin/t3 (on PATH), both on the home volume; `t3 update` updates it.
+# The latest stable release, or T3CODE_VERSION / T3CODE_CHANNEL (stable|nightly) from
+# the env. `t3` serves the GUI on 127.0.0.1:3773 and prints a pairing URL (it opens no
+# browser here); `t3 up` and `t3 service` need systemd lingering, so they fail here.
+set -ex
+curl -fsSL https://t3.codes/install.sh | sh

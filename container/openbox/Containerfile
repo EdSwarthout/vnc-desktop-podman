@@ -1,0 +1,62 @@
+ARG BASE=localhost/vnc-desktop-archlinux:browser
+
+# Openbox (d_target=openbox), a bare window manager: no panel, no desktop icons, on a
+# distro's browser stage (the browser, the CLI installers, TigerVNC/noVNC, nested
+# podman). One stage per distro that has it; d_build picks the stage named like
+# d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags the image
+# vnc-desktop-<distro>:openbox. The build context is the repo root.
+#   archlinux - Arch Linux + Openbox, with Chromium
+
+# ---------------------------------------------------------------------------------------
+# Stage "archlinux"
+FROM ${BASE} AS archlinux
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# python-pyxdg: for openbox-xdg-autostart (XDG autostart entries)
+# scrot: tests/screenshot.sh
+# keep list sorted
+RUN pacman -Syu --noconfirm --needed \
+    openbox \
+    python-pyxdg \
+    scrot \
+    && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
+    && rm -rf /var/lib/pacman/sync/*
+
+# Root menu (right-click the background): the packaged one starts x-terminal-emulator
+# and x-www-browser, which are Debian's alternatives and don't exist here. Exit ends the
+# session, which stops the container. A ~/.config/openbox/menu.xml overrides it.
+COPY <<'EOF' /etc/xdg/openbox/menu.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Openbox 3">
+    <item label="Terminal">
+      <action name="Execute"><command>xterm</command></action>
+    </item>
+    <item label="Chromium">
+      <action name="Execute"><command>chromium</command></action>
+    </item>
+    <separator />
+    <menu id="client-list-menu" />
+    <separator />
+    <item label="Reconfigure">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Exit">
+      <action name="Exit"><prompt>yes</prompt></action>
+    </item>
+  </menu>
+</openbox_menu>
+EOF
+
+# openbox-session runs the autostart, then Openbox; it ends when Openbox exits. The
+# xterm is there so that a new session isn't just an empty grey screen.
+RUN printf '%s\n' 'xterm &' >> /etc/xdg/openbox/autostart \
+    && printf '%s\n' '#!/bin/sh' 'eval "$(dbus-launch --sh-syntax)"' \
+        'export XDG_CURRENT_DESKTOP=openbox' 'exec openbox-session' > /usr/local/bin/vnc-session
+
+USER ${USERID}

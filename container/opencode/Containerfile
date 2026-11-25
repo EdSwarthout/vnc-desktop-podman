@@ -1,0 +1,99 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
+
+# OpenCode (agent desktop "opencode", d_target=<desktop>-opencode, e.g. lxqt-opencode,
+# gnome-opencode; https://opencode.ai), on a distro's desktop stage (Chrome, the CLI
+# installers, TigerVNC/noVNC, nested podman): the OpenCode desktop app and its terminal
+# UI. One stage per distro that has it; d_build picks the stage named like d_distro,
+# with BASE=localhost/vnc-desktop-<distro>:<desktop>, and tags the image
+# vnc-desktop-<distro>:<desktop>-opencode. The build context is the repo root.
+#   ubuntu - OpenCode Desktop (Electron .deb) and the opencode CLI
+#   fedora - the same from the .rpm
+# See README.md here.
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# OpenCode Desktop: the .deb from opencode.ai's "latest" URL (GitHub's "latest" release
+# can be an older major version). It ships an amd64 and an arm64 build; dpkg reports the
+# image's architecture, also in a cross build under emulation. OPENCODE_DEB can override
+# the URL. apt installs its dependencies (GTK 3, NSS, …).
+# It bundles the CLI that it runs as its server, /opt/OpenCode/resources/opencode-cli.
+# Its own updater can't install a .deb without root: rebuild (d_build_fresh) to update.
+ARG OPENCODE_DEB=
+RUN curl -fsSLo /tmp/opencode-desktop.deb \
+        "${OPENCODE_DEB:-https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-$(dpkg --print-architecture).deb}" \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    /tmp/opencode-desktop.deb \
+    && rm /tmp/opencode-desktop.deb \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Electron's sandbox needs user namespaces or a setuid chrome-sandbox, neither of which
+# works in a rootless container: a wrapper in /usr/local/bin (ahead of the package's
+# /usr/bin/ai.opencode on PATH) adds --no-sandbox, and the menu entries are pointed at it
+# (the build fails if a new package's .desktop files no longer have the expected Exec=).
+# --password-store=basic: Electron's safeStorage keeps secrets (provider logins) in a
+# file instead of a keyring: the user has no password to unlock a keyring with, and
+# LXQt has no keyring daemon.
+RUN printf '#!/bin/sh\nexec /opt/OpenCode/ai.opencode --no-sandbox --password-store=basic "$@"\n' \
+        > /usr/local/bin/ai.opencode \
+    && chmod +x /usr/local/bin/ai.opencode \
+    && for f in ai.opencode.desktop opencode-desktop; do \
+           sed -i 's|^Exec=/opt/OpenCode/ai.opencode|Exec=/usr/local/bin/ai.opencode|' \
+               /usr/share/applications/$f.desktop \
+           && grep -q '^Exec=/usr/local/bin/ai.opencode' /usr/share/applications/$f.desktop \
+           || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
+       done
+
+# The terminal UI: `opencode` is the desktop app's bundled CLI (one copy in the image).
+# install_opencode (from the browser stage, run as the user like install_claude)
+# installs opencode's own build in ~/.opencode/bin, which wins on PATH from the next
+# shell on.
+RUN ln -s /opt/OpenCode/resources/opencode-cli /usr/local/bin/opencode \
+    && opencode --version
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "fedora": as "ubuntu", from the .rpm
+FROM ${BASE} AS fedora
+USER root
+
+ARG USERID
+ARG USER_UID
+
+# OpenCode Desktop: the .rpm from opencode.ai's "latest" URL, as the .deb in "ubuntu";
+# its architecture is named the uname -m way (x86_64, aarch64). It installs to
+# /opt/OpenCode, as the .deb does, so the wrapper and the CLI link below are the same.
+# dnf installs its dependencies (libXScrnSaver beyond what Chrome needs). OPENCODE_RPM
+# can override the URL.
+ARG OPENCODE_RPM=
+RUN curl -fsSLo /tmp/opencode-desktop.rpm \
+        "${OPENCODE_RPM:-https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-linux-$(uname -m).rpm}" \
+    && dnf -y install /tmp/opencode-desktop.rpm \
+    && rm /tmp/opencode-desktop.rpm \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; }
+
+# The --no-sandbox --password-store=basic wrapper and menu entries, as in "ubuntu".
+RUN printf '#!/bin/sh\nexec /opt/OpenCode/ai.opencode --no-sandbox --password-store=basic "$@"\n' \
+        > /usr/local/bin/ai.opencode \
+    && chmod +x /usr/local/bin/ai.opencode \
+    && for f in ai.opencode.desktop opencode-desktop; do \
+           sed -i 's|^Exec=/opt/OpenCode/ai.opencode|Exec=/usr/local/bin/ai.opencode|' \
+               /usr/share/applications/$f.desktop \
+           && grep -q '^Exec=/usr/local/bin/ai.opencode' /usr/share/applications/$f.desktop \
+           || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
+       done
+
+# The terminal UI: the bundled CLI, as in "ubuntu".
+RUN ln -s /opt/OpenCode/resources/opencode-cli /usr/local/bin/opencode \
+    && opencode --version
+
+USER ${USERID}

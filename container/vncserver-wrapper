@@ -1,0 +1,58 @@
+#!/bin/bash
+# vncserver :N [-fg] [-localhost yes|no] [Xvnc options]: the front end start.sh calls,
+# installed as /usr/local/bin/vncserver by every distro's vnc stage (ahead of a packaged
+# /usr/bin/vncserver on PATH). The distros' own vncservers differ: Debian/Ubuntu's is a
+# perl script with its own options and log files, Arch's and Fedora's take only a display
+# and run the systemd-style session of /etc/tigervnc. This one is the same everywhere:
+# always in the foreground, it runs the X server (Xtigervnc on Debian/Ubuntu, Xvnc
+# elsewhere) and ~/.config/tigervnc/xstartup, logs to stdout/stderr (podman logs), and
+# exits (with the status of whichever ended first) when either ends or on SIGTERM/SIGINT.
+set -u
+case ${1:-} in
+    :[0-9]*) disp=$1; shift ;;
+    *) echo "usage: vncserver :N [-fg] [-localhost yes|no] [Xvnc options]" >&2; exit 2 ;;
+esac
+args=() desktop=
+while [ $# -gt 0 ]; do
+    case $1 in
+        -fg) ;;
+        -desktop) desktop=${2:-}; args+=("$1" "${2:-}"); shift ;;
+        -localhost)
+            case ${2:-} in
+                no|0) args+=(-localhost=0); shift ;;
+                yes|1) args+=(-localhost=1); shift ;;
+                *) args+=(-localhost=1) ;;
+            esac ;;
+        *) args+=("$1") ;;
+    esac
+    shift
+done
+n=${disp#:}
+vncdir=~/.config/tigervnc
+xvnc=$(command -v Xtigervnc || command -v Xvnc) || { echo "vncserver: no Xtigervnc or Xvnc" >&2; exit 1; }
+
+# /tmp may be an empty tmpfs; a lock left by `podman restart` would block the display
+mkdir -p -m 1777 /tmp/.X11-unix
+rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n"
+
+trap 'kill $(jobs -p) 2>/dev/null' TERM INT
+"$xvnc" "$disp" -rfbport $((5900 + n)) -rfbauth "$vncdir/passwd" -nolisten tcp "${args[@]}" &
+xpid=$!
+until [ -S "/tmp/.X11-unix/X$n" ]; do
+    kill -0 "$xpid" 2>/dev/null || { echo "vncserver: $xvnc failed to start" >&2; exit 1; }
+    sleep 0.1
+done
+# The session's environment, as Debian/Ubuntu's perl vncserver sets it up: desktops
+# depend on it (Cinnamon's muffin quits with "Unsupported session type" without
+# XDG_SESSION_TYPE). No session name or desktop is given, so those variables go.
+(
+    export DISPLAY=$disp VNCDESKTOP=$desktop XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user
+    unset XDG_MENU_PREFIX GDMSESSION DESKTOP_SESSION XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP XDG_DATA_DIRS
+    exec "$vncdir/xstartup"
+) &
+
+rc=0
+wait -n || rc=$?
+kill $(jobs -p) 2>/dev/null
+wait
+exit "$rc"

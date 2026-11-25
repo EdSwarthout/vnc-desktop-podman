@@ -1,17 +1,17 @@
 #!/bin/bash
 # Extract the installed Omarchy system from the ISO's omarchy-root.img.zst (a raw btrfs
-# filesystem) into omarchy/rootfs.tar, without root on the host: a throwaway archcc:base
+# filesystem) into container/omarchy/rootfs.tar, without root on the host: a throwaway vnc-desktop-archlinux:base
 # container (root in the user namespace) decompresses it and runs `btrfs restore`, which
 # reads the image file directly (no loop mount). Owners, modes, xattrs (file caps) and
 # symlinks are kept. Runs on the host or nested in an instance.
-#   omarchy/extract.sh [WORKDIR]   (default ~/Containers/omarchy-work; needs ~12 GB)
+#   container/omarchy/extract.sh [WORKDIR]   (default ~/Containers/omarchy-work; needs ~12 GB)
 set -euo pipefail
 D=$(cd "$(dirname "$0")" && pwd)
 ISO=${OMARCHY_ISO:-$D/OMARCHY_202611}
 IMG=$ISO/arch/x86_64/omarchy-root.img.zst
 W=${1:-$HOME/Containers/omarchy-work}
 OUT=$D/rootfs.tar
-IMAGE=${OMARCHY_EXTRACT_IMAGE:-localhost/archcc:base}
+IMAGE=${OMARCHY_EXTRACT_IMAGE:-localhost/vnc-desktop-archlinux:base}
 CACHE=/var/cache/apt-archlinux
 
 [ -r "$IMG" ] || { echo "no $IMG (is the ISO mounted?)" >&2; exit 1; }

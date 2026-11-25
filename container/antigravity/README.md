@@ -1,30 +1,38 @@
-# Google Antigravity image (`d_distro=antigravity`)
+# Google Antigravity agent desktop (`d_target=lxqt-antigravity`, `gnome-antigravity`)
 
 [Google Antigravity](https://antigravity.google), Google's agentic coding platform: the
-desktop App, its Python SDK, and an installer for its CLI (`agy`). It runs on Ubuntu's
-`lxqt` stage (LXQt, Google Chrome, TigerVNC/noVNC, nested podman, `install_claude`). One
-stage, `lxqt`, tagged `u2604antigravity:lxqt`. It builds on amd64 and arm64: Google
+desktop App, its Python SDK, and an installer for its CLI (`agy`), on LXQt (with
+Google Chrome, TigerVNC/noVNC, nested podman and the CLI installers). The
+[`Containerfile`](Containerfile) here has the same stage for Ubuntu and Fedora (no
+package manager involved), built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
+`vnc-desktop-<distro>:lxqt-antigravity-<version>`. It builds on amd64 and arm64: Google
 publishes the App, the CLI and the SDK's wheels for both, and it runs on an arm64 DGX
 Spark as well as on amd64.
 
-![The Antigravity App in ag1u on arm64, and in a nested instance ag1u_ag1u](../docs/antigravity/lxqt-nested.png)
+![The Antigravity App in an instance on arm64, and in a nested instance inside it](../../docs/antigravity/lxqt-nested.png)
 
 ```bash
 source ./env.rc
-d_distro=antigravity d_target=lxqt d_build              # builds u2604cc:lxqt first
-d_select 1; d_distro=antigravity d_target=lxqt d_run    # instance ag1u
-d_distro=antigravity d_vnc                              # VNC 7201 (needs vncviewer)
-d_distro=antigravity d_novnc                            # or noVNC on 6381, in a browser
+d_target=lxqt-antigravity d_build              # builds vnc-desktop-ubuntu:lxqt-2604 first
+d_select 1; d_target=lxqt-antigravity d_run    # vnc-desktop-ubuntu-lxqt-antigravity-2604-7201
+d_target=lxqt-antigravity d_vnc                # VNC 7201 (needs vncviewer)
+d_target=lxqt-antigravity d_novnc              # or noVNC on 6381, in a browser
+d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-lxqt-antigravity-45-7201, same ports
 ```
 
-Keep `d_target=lxqt` on the `d_run` line: a variable set for the `d_build` command
-doesn't stay set in your shell, and `xfce` (the default) isn't an Antigravity stage.
+On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-antigravity` (built on
+`vnc-desktop-ubuntu:gnome-2604`, instances `vnc-desktop-ubuntu-gnome-antigravity-2604-<VNC port>`).
+It has the same ports as `lxqt-antigravity`, so run the two on different numbers.
 
-| Distro      | Container name | Home                       | VNC    | noVNC  |
-|-------------|----------------|----------------------------|--------|--------|
-| antigravity | `agNu`         | `$d_dir/u2604antigravityN` | 7200+N | 6380+N |
+Keep `d_target=lxqt-antigravity` (or `gnome-antigravity`) on each line (or set it in your
+shell or `.env`): the instance's name, home and ports follow it.
 
-Nested (from inside an instance) it is `<this instance>_agNu`.
+| Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
+|--------|----------------------------------------|--------|--------|
+| ubuntu | `vnc-desktop-ubuntu-lxqt-antigravity-2604-<VNC port>` | 7200+N | 6380+N |
+| fedora | `vnc-desktop-fedora-lxqt-antigravity-45-<VNC port>` | 7200+N | 6380+N |
+
+Nested (from inside an instance) it is `<this instance>_<that name>`.
 
 ## What's in it
 
@@ -59,8 +67,8 @@ Nested (from inside an instance) it is `<this instance>_agNu`.
 ## Updating
 
 - **App**: the image has the newest release at build time. Its own updater can't
-  write to `/opt`: rebuild with `d_distro=antigravity d_target=lxqt d_build_fresh`.
-  To pin a version: `d_distro=antigravity d_target=lxqt d_build --build-arg
+  write to `/opt`: rebuild with `d_target=lxqt-antigravity d_build_fresh`.
+  To pin a version: `d_target=lxqt-antigravity d_build --build-arg
   ANTIGRAVITY_VERSION=2.34.0` (a version from
   `https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases`),
   or `--build-arg ANTIGRAVITY_TGZ=<url>` for a given tarball.

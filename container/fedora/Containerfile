@@ -1,0 +1,277 @@
+ARG BASE=registry.fedoraproject.org/fedora:45
+
+# Fedora 45. Same layering as ../debian/Containerfile, whose stages this follows (keep
+# them in step). Build with d_distro=fedora; the context is the repo root (the shared
+# start.sh, nested-subids, vncserver-wrapper, cli-installers/).
+# Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
+# vnc-desktop-fedora:<stage>-45):
+#   base    - Fedora + network/debug tools + nested rootless podman; headless
+#   vnc     - base + TigerVNC/noVNC, session is a bare xterm
+#   browser - vnc + Google Chrome (via the --no-sandbox wrapper) + the CLI installers
+# Desktops are built on browser from their own directories (../xfce, ../lxqt: stage
+# "fedora" there, tagged vnc-desktop-fedora:<desktop>-45), and agent desktops on a desktop.
+# Each stage with a display installs /usr/local/bin/vnc-session, which the home's
+# ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
+
+# ---------------------------------------------------------------------------------------
+# Stage "base": minimal image with nested rootless podman, network and debug tools
+FROM ${BASE} AS base
+
+# The container user. d_build passes d_user and the builder's UID, so that with
+# PODMAN_USERNS=keep-id it is the host user and owns the home volume.
+ARG USERID=ed
+ARG USER_UID=1001
+
+ENV LANG=C.UTF-8 \
+    USERID=${USERID}
+
+# Keep downloaded packages: dnf keeps them (and its repository metadata) in
+# /var/cache/apt-fedora (cachedir; system_cachedir is the one dnf5 uses as root), where
+# d_build mounts the shared (NFS) fedora package cache: env.rc's per-distro "apt cache",
+# hence the name, though it holds rpms here. d_run mounts every distro's cache
+# (/var/cache/apt-ubuntu, /var/cache/apt-fedora, …), so a build nested in an instance
+# uses the right one whichever distro it is. Each dnf RUN ends with
+# `mountpoint -q /var/cache/apt-fedora || dnf clean all`, so a plain `podman build`
+# without the mount doesn't leave packages in the image layers.
+# install_weak_deps=False: like apt's --no-install-recommends in the other distros.
+RUN grep -q '^\[main\]' /etc/dnf/dnf.conf \
+    && printf '%s\n' keepcache=True install_weak_deps=False \
+        cachedir=/var/cache/apt-fedora system_cachedir=/var/cache/apt-fedora \
+        >> /etc/dnf/dnf.conf
+
+# Basics, network/debug and development tools, and nested rootless podman. The user
+# has no root in the container (below), so what's needed at runtime has to be here.
+# gcc, gcc-c++, make: Debian's build-essential; bind-utils: dig, nslookup; hostname,
+# util-linux (setpriv, mountpoint): start.sh; netcat: OpenBSD's, as in Debian;
+# shadow-utils: newuidmap/newgidmap (Debian's uidmap); python3 has venv built in.
+# keep list sorted
+RUN dnf -y upgrade && dnf -y install \
+    ShellCheck \
+    bc \
+    bind-utils \
+    bzip2 \
+    ca-certificates \
+    catatonit \
+    curl \
+    diffutils \
+    emacs-nox \
+    fd-find \
+    file \
+    findutils \
+    fuse-overlayfs \
+    fzf \
+    gcc \
+    gcc-c++ \
+    gh \
+    git \
+    gnupg2 \
+    hostname \
+    iperf3 \
+    iproute \
+    iputils \
+    jq \
+    less \
+    libcap \
+    lsof \
+    make \
+    nano \
+    netcat \
+    nodejs \
+    nodejs-npm \
+    openssh-clients \
+    passt \
+    patch \
+    podman \
+    procps-ng \
+    python3-pip \
+    ripgrep \
+    rsync \
+    shadow-utils \
+    strace \
+    sudo \
+    tar \
+    tmux \
+    tree \
+    unzip \
+    util-linux \
+    wget \
+    which \
+    xz \
+    zip \
+    zstd \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; }
+
+# Non-root user with a fixed UID; a user the base image ships with that UID makes way
+# (Fedora's has none; kept in step with Debian's). No general root: the only thing it
+# may sudo is the boot-time nested-subids (root-owned, and "" = without arguments),
+# which start.sh runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
+RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
+    && { [ -z "$old" ] || userdel -r "$old"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
+    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
+    && chmod 440 /etc/sudoers.d/${USERID} \
+    && visudo -cf /etc/sudoers.d/${USERID}
+
+# A new home's .bashrc is /etc/skel's (start.sh's first boot). Unlike Debian's and
+# Ubuntu's, Fedora's already puts ~/.local/bin (install_claude, t3, …) on PATH for
+# non-login shells; the grep fails the build if that changes.
+RUN grep -q '\.local/bin' /etc/skel/.bashrc
+
+# Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
+# useradd's default ed:524288:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
+# (skip the user's own; for ed, 1001: 1-1000 and 1002-65535): inner containers get root->ed plus 65534 subids. subgid also gets
+# group 0 (ed:0:1), so root in a nested build can use a shared package cache (see
+# nested-subids). These are defaults: at every boot start.sh runs nested-subids, which
+# rewrites them from the container's actual ID map (needed one level deeper, e.g.
+# ccN_M) and re-applies the file caps below.
+RUN printf '%s:1:%d\n%s:%d:%d\n' ${USERID} $((USER_UID - 1)) ${USERID} $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
+    && { cat /etc/subuid; printf '%s:0:1\n' ${USERID}; } > /etc/subgid
+
+# setuid-root newuidmap runs with euid 0, which is not the owner of the new user
+# namespace, so writing uid_map needs CAP_SYS_ADMIN, which the outer container lacks
+# (EPERM). With file caps instead, euid stays ed (the owner); it only adds SETUID/SETGID.
+RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap \
+    && setcap cap_setuid=ep /usr/bin/newuidmap \
+    && setcap cap_setgid=ep /usr/bin/newgidmap
+
+# ping: relies on net.ipv4.ping_group_range for unprivileged ICMP sockets, which systemd
+# opens up but is "0 0" in the container. With the cap it works like Ubuntu's: when the
+# instance has NET_RAW (d_run_opts --cap-add=NET_RAW) in its bounding set.
+RUN setcap cap_net_raw=ep /usr/bin/ping
+
+# pasta (nested podman's network): if it is a symlink to passt, a host with AppArmor
+# profiles for both (Ubuntu) attaches them by the resolved path, so pasta would run under
+# passt's profile and can't open the network namespace (as on Arch, see its
+# Containerfile). Hard links keep the path /usr/bin/pasta; nothing to do if it isn't one.
+RUN for f in pasta pasta.avx2; do \
+        if [ -L /usr/bin/$f ]; then ln -f "$(readlink -f /usr/bin/$f)" /usr/bin/$f; fi; \
+    done \
+    && [ ! -L /usr/bin/pasta ]
+
+# No systemd/logind in the container: no cgroup delegation, no journald.
+# utsns = "host": the outer seccomp profile blocks sethostname without CAP_SYS_ADMIN,
+# so nested containers share the instance's hostname instead of setting their own.
+# TMPDIR=/tmp (as in Arch's): podman 6 mounts an overlay over the build context with its
+# upper directory in $TMPDIR, by default /var/tmp, on the instance's overlay root, which
+# can't hold one ("mounting an overlay over build context directory … invalid
+# argument"). /tmp is a tmpfs (d_run's --tmpfs=/tmp), which can.
+RUN mkdir -p /etc/containers/containers.conf.d && printf '%s\n' \
+        '[containers]' \
+        'cgroups = "disabled"' \
+        'utsns = "host"' \
+        '' \
+        '[engine]' \
+        'cgroup_manager = "cgroupfs"' \
+        'events_logger = "file"' \
+        'env = ["TMPDIR=/tmp"]' \
+        > /etc/containers/containers.conf.d/nested.conf
+
+COPY --chmod=755 container/nested-subids /usr/local/sbin/nested-subids
+
+# start.sh: first-boot home setup and nested-subids; then the VNC session if the stage
+# has one, otherwise it just waits (use `podman exec -it <name> bash`).
+COPY --chmod=755 container/start.sh /usr/local/bin/start.sh
+
+# Files for the home: user_files/fedora/ at the repo root (gitignored, may be absent:
+# the [a] in its COPY path is a glob, so a missing one matches nothing) is packed into
+# /usr/local/share/user_files.tar, which start.sh unpacks into a new home on its first
+# boot, over /etc/skel's copies. Changing them rebuilds every later stage. LICENSE
+# is only there because COPY fails when no source exists (a user_files/fedora/LICENSE
+# would be dropped). The files are in the image: no secrets, if the image is shared.
+COPY LICENSE user_files/fedor[a] /tmp/user_files/
+RUN rm /tmp/user_files/LICENSE \
+    && if [ -n "$(ls -A /tmp/user_files)" ]; then \
+           find /tmp/user_files -mindepth 1 -maxdepth 1 -printf '%P\0' \
+           | tar -C /tmp/user_files --null -T - --owner=0 --group=0 -cf /usr/local/share/user_files.tar; \
+       fi \
+    && rm -rf /tmp/user_files
+
+USER ${USERID}
+WORKDIR /home/${USERID}
+CMD ["/usr/local/bin/start.sh"]
+
+# ---------------------------------------------------------------------------------------
+# Stage "vnc": TigerVNC server/viewer and noVNC, no desktop: the session is an xterm
+FROM base AS vnc
+USER root
+
+ENV DISPLAY=:1 \
+    VNC_RESOLUTION=1440x900
+
+# dbus-x11: xstartup runs the session under dbus-launch (desktops and Chrome use the bus)
+# tigervnc-x11-server: Xvnc (and vncpasswd, from tigervnc-server-common); tigervnc: the viewer
+# dejavu-sans-fonts, xorg-x11-fonts-misc: a TrueType default, and the "fixed" bitmap
+# font xterm wants
+# xdotool: keys, clicks and window queries for tests (env.rc's d_test, tests/lock.sh)
+# keep list sorted
+RUN dnf -y install \
+    dbus-x11 \
+    dejavu-sans-fonts \
+    novnc \
+    python3-websockify \
+    tigervnc \
+    tigervnc-x11-server \
+    xdotool \
+    xorg-x11-fonts-misc \
+    xorg-x11-xauth \
+    xterm \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; } \
+    && test -f /usr/share/novnc/vnc.html && command -v Xvnc vncpasswd websockify
+
+# vncserver: the shared front end (../vncserver-wrapper) that runs Xvnc and the session
+# in the foreground, the same in every distro; it shadows any packaged vncserver on PATH.
+COPY --chmod=755 container/vncserver-wrapper /usr/local/bin/vncserver
+
+# The session: closing it (exit the xterm, or log out of a desktop) stops the container.
+RUN printf '#!/bin/sh\nexec xterm\n' > /usr/local/bin/vnc-session \
+    && chmod +x /usr/local/bin/vnc-session
+
+USER ${USERID}
+EXPOSE 5901 6080
+
+# ---------------------------------------------------------------------------------------
+# Stage "browser": vnc + Google Chrome + the CLI installers
+FROM vnc AS browser
+USER root
+
+# Fonts for web pages: metric-compatible Latin, CJK (else Chinese/Japanese/Korean text
+# shows as empty boxes), emoji
+# keep list sorted
+RUN dnf -y install \
+    google-noto-color-emoji-fonts \
+    google-noto-sans-cjk-fonts \
+    liberation-fonts \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; }
+
+# Google Chrome for the image's architecture (x86_64 or aarch64, rpm names them the
+# uname -m way). The rpm adds Google's dnf repository itself.
+RUN curl -fsSLo /tmp/chrome.rpm \
+        "https://dl.google.com/linux/direct/google-chrome-stable_current_$(uname -m).rpm" \
+    && dnf -y install /tmp/chrome.rpm \
+    && rm -f /tmp/chrome.rpm \
+    && { mountpoint -q /var/cache/apt-fedora || dnf clean all; }
+
+# Chrome needs these flags in a container (no user-namespace sandbox).
+# Wrapper in /usr/local/bin shadows /usr/bin on PATH; menu entries are pointed at it too
+# (the build fails if a new Chrome's .desktop files no longer have the expected Exec=).
+# (No x-www-browser alternatives as in Debian's: Fedora doesn't use them.)
+RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --no-first-run --no-default-browser-check "$@"\n' \
+        > /usr/local/bin/google-chrome-stable \
+    && chmod +x /usr/local/bin/google-chrome-stable \
+    && ln -s google-chrome-stable /usr/local/bin/google-chrome \
+    && for f in google-chrome com.google.Chrome; do \
+           [ -f /usr/share/applications/$f.desktop ] || continue; \
+           sed -i 's|^Exec=/usr/bin/google-chrome-stable|Exec=/usr/local/bin/google-chrome-stable|' \
+               /usr/share/applications/$f.desktop \
+           && grep -q '^Exec=/usr/local/bin/google-chrome-stable' /usr/share/applications/$f.desktop \
+           || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
+       done \
+    && grep -q '^Exec=/usr/local/bin/google-chrome-stable' /usr/share/applications/google-chrome.desktop
+
+# CLI installers, run as the user at runtime (the home is a volume): install_claude
+# (Claude Code), install_agy (Antigravity CLI), install_opencode, install_grok,
+# install_t3code. Each runs its vendor's installer into the home, where the tool
+# persists and updates itself; see the scripts in ../cli-installers.
+COPY --chmod=755 container/cli-installers/ /usr/local/bin/
+
+USER ${USERID}

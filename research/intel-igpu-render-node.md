@@ -4,7 +4,7 @@ Status: **done** (2026-11-22). Tested in throwaway containers nested in cc1u, wh
 only `renderD128`. Both desktops render on the iGPU, and two instances of each ran at once.
 GNOME needs nothing new. Hyprland can't use a bare render node, but it works nested in a
 headless labwc (prototype: `omarchy-gpu-session.sh`). **Omarchy render-node mode**:
-`o_render=1` in `../omarchy/` (see its README). **GNOME over RDP** with the GPU:
+`o_render=1` in `../container/omarchy/` (see its README). **GNOME over RDP** with the GPU:
 `../wayland/` (`MODE= headless.sh` + `rdp-headless.sh`, see its README).
 
 ### Device decision (2026-11-22)
@@ -21,7 +21,7 @@ headless labwc (prototype: `omarchy-gpu-session.sh`). **Omarchy render-node mode
 ## Question
 
 Can the host's Intel iGPU (Raptor Lake-S UHD 770, SR-IOV capable) be used for the
-Wayland desktops: Omarchy/Hyprland in `../omarchy/` and GNOME Shell in `../wayland/`?
+Wayland desktops: Omarchy/Hyprland in `../container/omarchy/` and GNOME Shell in `../wayland/`?
 Background: the Hyprland wiki's *Virtual GPU* page
 (<https://wiki.hypr.land/configuring/extra/virtual-gpu/#running-hyprland-on-vgpu>) describes
 SR-IOV vGPUs for VMs.
@@ -170,7 +170,7 @@ keep-groups`, no other `/dev/dri` node):
    desktop's **headless** mode (`../wayland/rdp-headless.sh`): a virtual monitor per
    client and credentials in a file, no keyring. Run the shell with no monitor of its own
    (`MODE= headless.sh`), or the client sees a second, empty monitor.
-3. ~~Results into the READMEs~~ **done** (`../omarchy/README.md`, `../wayland/README.md`).
+3. ~~Results into the READMEs~~ **done** (`../container/omarchy/README.md`, `../wayland/README.md`).
 4. ~~Report the aquamarine bugs upstream~~: draft in
    [aquamarine-upstream-draft.md](aquamarine-upstream-draft.md), **not submitted**. Both
    startup bugs are already fixed in aquamarine v0.16.0. The fixed-version binds are

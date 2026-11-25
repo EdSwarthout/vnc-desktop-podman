@@ -16,9 +16,9 @@ blast radius is one home directory.
 ## 2. Six desktops from one Containerfile
 
 XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE and Cinnamon are all stages of the same
-file, plus a headless stage and a bare-xterm one. Pick one with a single variable. A
-home directory works with any of them, so you can switch desktops without losing your
-setup.
+file, plus a headless stage and a bare-xterm one. Pick one with a single variable. Each
+desktop gets its own instance and home, named after its image and port
+(`vnc-desktop-ubuntu-lxqt-2604-6901`), so trying another desktop leaves your setup alone.
 
 ## 3. Your home survives rebuilds
 

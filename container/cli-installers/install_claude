@@ -1,0 +1,5 @@
+#!/bin/bash
+# install_claude: Claude Code's native installer, run as the user: ~/.local/bin (home
+# volume, on PATH), where it persists and updates itself.
+set -ex
+curl -fsSL https://claude.ai/install.sh | bash

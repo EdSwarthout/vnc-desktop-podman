@@ -1,14 +1,16 @@
-ARG BASE=docker.io/library/debian:trixie
+ARG BASE=docker.io/library/ubuntu:26.04
 
-# Debian 13 (trixie). Same layering as ../ubuntu/Containerfile, whose base, vnc and chrome
-# stages this follows (keep them in step); only Debian's default desktop, GNOME. Build
-# with d_distro=debian; the context is the repo root (the shared start.sh, nested-subids).
+# Ubuntu 26.04 (d_distro=ubuntu, the default). The other distros' Containerfiles follow
+# these stages: keep them in step. The build context is the repo root (the shared
+# start.sh, nested-subids, vncserver-wrapper, cli-installers/).
 # Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
-# d13cc:<stage>):
-#   base   - Debian + network/debug tools + nested rootless podman; headless
-#   vnc    - base + TigerVNC/noVNC, session is a bare xterm
-#   chrome - vnc + Google Chrome (via the --no-sandbox wrapper)
-#   gnome  - chrome + GNOME desktop
+# vnc-desktop-ubuntu:<stage>-2604):
+#   base    - Ubuntu + network/debug tools + nested rootless podman; headless
+#   vnc     - base + TigerVNC/noVNC, session is a bare xterm
+#   browser - vnc + Google Chrome (via the --no-sandbox wrapper) + the CLI installers
+# Desktops are built on browser from their own directories (../xfce, ../lxqt, …: stage
+# "ubuntu" there, tagged vnc-desktop-ubuntu:<desktop>-2604), and agent desktops on a desktop
+# (../opencode, …: vnc-desktop-ubuntu:<desktop>-<agent>-2604).
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -25,19 +27,19 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     USERID=${USERID}
 
-# Keep downloaded .debs: apt keeps them in /var/cache/apt-debian (Dir::Cache::archives),
-# where d_build mounts the shared (NFS) debian apt cache; d_run mounts both distros'
+# Keep downloaded .debs: apt keeps them in /var/cache/apt-ubuntu (Dir::Cache::archives),
+# where d_build mounts the shared (NFS) ubuntu apt cache; d_run mounts both distros'
 # caches (/var/cache/apt-ubuntu, /var/cache/apt-debian), so a build nested in an
-# instance uses the right one whichever distro it is. The image's docker-clean deletes .debs
+# instance uses the right one whichever distro it is. Ubuntu's docker-clean deletes .debs
 # after every install, so drop it, but keep its other job: no
 # pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt from the lists anyway). Each apt
-# RUN ends with `mountpoint -q /var/cache/apt-debian || apt-get clean`, so a plain
+# RUN ends with `mountpoint -q /var/cache/apt-ubuntu || apt-get clean`, so a plain
 # `podman build` without the mount doesn't leave .debs in the image layers either.
 # Stop apt from changing the ownership of archives/partial
 RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
         > /etc/apt/apt.conf.d/docker-no-pkgcache \
-    && printf 'Dir::Cache::archives "/var/cache/apt-debian/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives \
+    && printf 'Dir::Cache::archives "/var/cache/apt-ubuntu/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives \
     && printf 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99no-sandbox-user
 
 # Basics, network/debug and development tools, and nested rootless podman. The user
@@ -52,8 +54,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     catatonit \
     curl \
     emacs-nox \
+    fd-find \
     file \
     fuse-overlayfs \
+    fzf \
     gh \
     git \
     gnupg \
@@ -87,19 +91,30 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     wget \
     xz-utils \
     zip \
-    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
+    zstd \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
-# Non-root user with a fixed UID; a user the base image ships with that UID makes way
-# (Debian's has none; kept in step with Ubuntu's). No general root: the only thing it
-# may sudo is the boot-time nested-subids (root-owned, and "" = without arguments),
-# which start.sh runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
+# Non-root user with a fixed UID; a user the base image ships with that UID (Ubuntu's
+# "ubuntu" is 1000) makes way. No general root: the only thing it may sudo is the
+# boot-time nested-subids (root-owned, and "" = without arguments), which start.sh
+# runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
 RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
     && { [ -z "$old" ] || userdel -r "$old"; } \
     && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
     && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
     && chmod 440 /etc/sudoers.d/${USERID} \
     && visudo -cf /etc/sudoers.d/${USERID}
+
+# A new home's .bashrc is /etc/skel's (start.sh's first boot), which leaves ~/.local/bin to
+# .profile, and a terminal's bash isn't a login shell: add it here too, since install_claude,
+# t3 and others put their commands there. The grep fails the build if the skel gets it.
+RUN ! grep -q '\.local/bin' /etc/skel/.bashrc \
+    && printf '%s\n' '' \
+        '# ~/.local/bin on PATH (also for non-login shells): install_claude, t3, … put commands there' \
+        'if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then' \
+        '    export PATH="$HOME/.local/bin${PATH:+:${PATH}}"' \
+        'fi' >> /etc/skel/.bashrc
 
 # Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
 # useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
@@ -118,12 +133,6 @@ RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap \
     && setcap cap_setuid=ep /usr/bin/newuidmap \
     && setcap cap_setgid=ep /usr/bin/newgidmap
 
-# ping: Debian's has no file caps (unlike Ubuntu's, cap_net_raw=ep): it relies on
-# net.ipv4.ping_group_range for unprivileged ICMP sockets, which systemd opens up but is
-# "0 0" in the container. With the cap it works like Ubuntu's: when the instance has
-# NET_RAW (d_run_opts --cap-add=NET_RAW) in its bounding set.
-RUN setcap cap_net_raw=ep /usr/bin/ping
-
 # No systemd/logind in the container: no cgroup delegation, no journald.
 # utsns = "host": the outer seccomp profile blocks sethostname without CAP_SYS_ADMIN,
 # so nested containers share the instance's hostname instead of setting their own.
@@ -137,24 +146,19 @@ RUN mkdir -p /etc/containers/containers.conf.d && printf '%s\n' \
         'events_logger = "file"' \
         > /etc/containers/containers.conf.d/nested.conf
 
-COPY --chmod=755 nested-subids /usr/local/sbin/nested-subids
-
-# Claude Code: run install_claude as the user at runtime. The native installer puts it in
-# ~/.local/bin (home volume), so it persists and self-updates.
-RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://claude.ai/install.sh | bash\n' \
-    > /usr/local/bin/install_claude \
-    && chmod +x /usr/local/bin/install_claude
+COPY --chmod=755 container/nested-subids /usr/local/sbin/nested-subids
 
 # start.sh: first-boot home setup and nested-subids; then the VNC session if the stage
 # has one, otherwise it just waits (use `podman exec -it <name> bash`).
-COPY --chmod=755 start.sh /usr/local/bin/start.sh
+COPY --chmod=755 container/start.sh /usr/local/bin/start.sh
 
-# Files for the home: debian/user_files/ (gitignored, may be absent) is packed into
+# Files for the home: user_files/ubuntu/ at the repo root (gitignored, may be absent:
+# the [u] in its COPY path is a glob, so a missing one matches nothing) is packed into
 # /usr/local/share/user_files.tar, which start.sh unpacks into a new home on its first
 # boot, over /etc/skel's copies. Changing them rebuilds every later stage. LICENSE
-# is only there because COPY fails when no source exists (a top-level user_files/LICENSE
+# is only there because COPY fails when no source exists (a user_files/ubuntu/LICENSE
 # would be dropped). The files are in the image: no secrets, if the image is shared.
-COPY LICENSE debian/user_file[s] /tmp/user_files/
+COPY LICENSE user_files/ubunt[u] /tmp/user_files/
 RUN rm /tmp/user_files/LICENSE \
     && if [ -n "$(ls -A /tmp/user_files)" ]; then \
            find /tmp/user_files -mindepth 1 -maxdepth 1 -printf '%P\0' \
@@ -186,8 +190,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     websockify \
     xdotool \
     xterm \
-    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# vncserver: the shared front end (../vncserver-wrapper) that runs Xtigervnc and the
+# session in the foreground, the same in every distro; it shadows the package's perl
+# /usr/bin/vncserver on PATH.
+COPY --chmod=755 container/vncserver-wrapper /usr/local/bin/vncserver
 
 # The session: closing it (exit the xterm, or log out of a desktop) stops the container.
 RUN printf '#!/bin/sh\nexec xterm\n' > /usr/local/bin/vnc-session \
@@ -197,8 +206,8 @@ USER ${USERID}
 EXPOSE 5901 6080
 
 # ---------------------------------------------------------------------------------------
-# Stage "chrome": vnc + Google Chrome
-FROM vnc AS chrome
+# Stage "browser": vnc + Google Chrome + the CLI installers
+FROM vnc AS browser
 USER root
 
 # Fonts for web pages: metric-compatible Latin, CJK (else Chinese/Japanese/Korean text
@@ -208,17 +217,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
-    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Google Chrome for the image's architecture (amd64 or arm64; dpkg reports the image's,
 # also in a cross build under emulation). The .deb's postinst adds Google's apt repo + key
-# itself (chrome/Containerfile installs google-chrome-canary from it).
+# itself (../chrome/Containerfile installs google-chrome-canary from it).
 RUN curl -fsSLo /tmp/chrome.deb \
         "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb" \
     && apt-get update && apt-get install -y /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Chrome needs these flags in a container (no user-namespace sandbox).
@@ -240,66 +249,10 @@ RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --no-firs
            || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
        done
 
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "gnome": chrome + GNOME (GNOME Shell's X11 session), Debian's default desktop
-FROM chrome AS gnome
-USER root
-
-# GNOME 48 still has an X11 session (Ubuntu 26.04's GNOME 50 doesn't; that stage is
-# Flashback). Without the recommends: no Firefox, Evolution, Software etc.
-# gnome-screenshot: tests/screenshot.sh
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gnome-screenshot \
-    gnome-session \
-    gnome-shell \
-    gnome-terminal \
-    nautilus \
-    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# No systemd: gnome-session falls back to starting the session itself, but aborts without
-# a system bus, and there's no system dbus-daemon (it'd need root). So the session runs
-# its own stand-in, with no services on it (no logind, polkit, …: GNOME warns and goes
-# on), at $XDG_RUNTIME_DIR, which nothing else sets either.
-# --disable-acceleration-check: the check rejects software rendering (llvmpipe), which
-# is what the VNC X server has; GNOME Shell runs on it fine.
-# No screen locking: without GDM, GNOME Shell has no screen shield, so lock requests
-# (Super+L, org.gnome.ScreenSaver.Lock) find nothing to lock; the settings below turn
-# locking and idle blanking off as well.
-RUN printf '%s\n' '<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"' \
-        ' "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">' \
-        '<busconfig>' \
-        '  <type>system</type>' \
-        '  <auth>EXTERNAL</auth>' \
-        '  <listen>unix:tmpdir=/tmp</listen>' \
-        '  <policy context="default">' \
-        '    <allow send_destination="*" eavesdrop="true"/>' \
-        '    <allow eavesdrop="true"/>' \
-        '    <allow own="*"/>' \
-        '  </policy>' \
-        '</busconfig>' \
-        > /usr/local/share/vnc-system-bus.conf \
-    && printf '%s\n' '#!/bin/sh' \
-        'export XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=GNOME' \
-        'mkdir -p -m 700 "$XDG_RUNTIME_DIR"' \
-        'export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/system_bus_socket"' \
-        'dbus-daemon --fork --config-file=/usr/local/share/vnc-system-bus.conf --address="$DBUS_SYSTEM_BUS_ADDRESS"' \
-        'exec gnome-session --disable-acceleration-check' \
-        > /usr/local/bin/vnc-session
-
-# Dash favourites: Debian's are mostly apps that aren't installed (Firefox, Evolution,
-# Software, …), which leaves only Files. always-show-log-out: GNOME hides Log Out (the
-# way to end the session and stop the container) when there's only one local user.
-RUN printf '%s\n' \
-        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
-        '[org.gnome.desktop.screensaver]' 'lock-enabled=false' \
-        '[org.gnome.desktop.session]' 'idle-delay=uint32 0' \
-        '[org.gnome.shell]' 'always-show-log-out=true' \
-        "favorite-apps=['google-chrome.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Terminal.desktop']" \
-        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
-    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+# CLI installers, run as the user at runtime (the home is a volume): install_claude
+# (Claude Code), install_agy (Antigravity CLI), install_opencode, install_grok,
+# install_t3code. Each runs its vendor's installer into the home, where the tool
+# persists and updates itself; see the scripts in ../cli-installers.
+COPY --chmod=755 container/cli-installers/ /usr/local/bin/
 
 USER ${USERID}

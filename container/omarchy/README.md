@@ -42,8 +42,8 @@ Checked:
 
 ```bash
 sudo modprobe vkms                     # host, once per boot
-omarchy/extract.sh                     # ISO -> omarchy/rootfs.tar (~12 GB scratch, 7.5 GB tar)
-source omarchy/env.rc
+container/omarchy/extract.sh           # ISO -> container/omarchy/rootfs.tar (~12 GB scratch, 7.5 GB tar)
+source container/omarchy/env.rc
 o_build omarchy                        # builds rootfs -> wayvnc -> omarchy
 o_target=omarchy o_run 1               # container ccNo (nested: <instance>_No), home omarchyN
 o_target=omarchy o_render=1 o_run 2    # or on the GPU render node renderD128 (no vkms needed)
@@ -65,7 +65,7 @@ the Omarchy logo in the bar, or `o_exec omarchy-menu toggle root`. Super chords 
 looking and clicking.
 
 `extract.sh` needs the ISO (`omarchy-4.5.0-x86.iso`) loop-mounted at
-`omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`); `o_build` needs only `omarchy/rootfs.tar`,
+`container/omarchy/OMARCHY_202611/` (or `OMARCHY_ISO=…`); `o_build` needs only `container/omarchy/rootfs.tar`,
 so with the tar in place the ISO needn't be mounted. `o_run` needs `/dev/dri/<vkms card>` (or, with
 `o_render`, `/dev/dri/renderD128`) where it runs. A nested run needs the outer instance
 created with that device (render node: `--device /dev/dri/renderD128 --group-add

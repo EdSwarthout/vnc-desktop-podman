@@ -7,7 +7,7 @@ below the review. It's an AI suggestion, not tested instructions.
 
 Debian 13's kernel has no `vkms`, and a vkms card holds one compositor at a time.
 Is there another way to run the Wayland desktops: GNOME Shell (`../wayland/`) and
-Omarchy/Hyprland (`../omarchy/`)?
+Omarchy/Hyprland (`../container/omarchy/`)?
 
 ## Answer (from the review; the tests below are still to run)
 
@@ -50,7 +50,7 @@ Omarchy/Hyprland (`../omarchy/`)?
 
 ## Prerequisites
 
-- An `omarchy:wayvnc` image (`../omarchy/README.md`), run nested in an instance.
+- An `omarchy:wayvnc` image (`../container/omarchy/README.md`), run nested in an instance.
 - Tests 1 and 2 need no `/dev/dri` device at all, which is the point.
 
 ## Steps
@@ -70,7 +70,7 @@ Omarchy/Hyprland (`../omarchy/`)?
    Expected: Hyprland fails to get an EGL/GBM device. If it does run, check the
    renderer (llvmpipe?) and whether input reaches it through two compositors.
 3. Write the results here, update the Status line and `README.md`'s table, and, if test 2
-   works, add a section to `../omarchy/README.md`.
+   works, add a section to `../container/omarchy/README.md`.
 
 ## Resuming
 

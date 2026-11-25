@@ -1,16 +1,17 @@
-ARG BASE=localhost/u2604cc:chrome
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
-# A browser-automation image (d_distro=chrome): Ubuntu's chrome stage (../ubuntu/Containerfile:
-# Google Chrome stable, TigerVNC/noVNC, nested podman) plus Chrome Canary and tools for
-# driving a browser. The base is that locally built image, so d_build builds it first.
-# The build context is the repo root. One stage, tagged u2604chrome:canary:
-#   canary - chrome + Google Chrome Canary, Openbox, automation tools (npm, and Python's
+# A browser-automation image (d_target=devtools): a distro's browser stage (Google Chrome
+# stable, the CLI installers, TigerVNC/noVNC, nested podman) plus Chrome Canary and tools
+# for driving a browser. One stage per distro that has it; d_build picks the stage named
+# like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags the image
+# vnc-desktop-<distro>:devtools. The build context is the repo root.
+#   ubuntu - browser + Google Chrome Canary, Openbox, automation tools (npm, and Python's
 #            playwright in a uv-managed venv of the user's); session is an xterm
 # See README.md here for how to drive the browsers (d_chrome, d_chrome_mcp).
 
 # ---------------------------------------------------------------------------------------
-# Stage "canary": Ubuntu's chrome + Chrome Canary and browser automation tools
-FROM ${BASE} AS canary
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
 USER root
 
 # d_build passes these to every Containerfile. The user itself comes with the base image

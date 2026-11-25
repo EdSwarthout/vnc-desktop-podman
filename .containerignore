@@ -3,6 +3,8 @@
 # A new COPY source must be added here (the build fails with "no such file").
 *
 !LICENSE
-!nested-subids
-!start.sh
-!*/user_files
+!container/cli-installers
+!container/nested-subids
+!container/start.sh
+!container/vncserver-wrapper
+!user_files

@@ -18,7 +18,7 @@ checked (`src/backend/Wayland.cpp`):
 ## Recommendation
 
 - **Don't file 1 or 2.** They're fixed upstream; they reach Omarchy when it moves past
-  aquamarine 0.15.1. Then recheck `../omarchy/omarchy-session`'s workarounds (the `wtype`
+  aquamarine 0.15.1. Then recheck `../container/omarchy/omarchy-session`'s workarounds (the `wtype`
   nudge, the disabled start + `hyprctl reload`). They should become unnecessary, though
   probably harmless.
 - **3 is a duplicate of a closed issue.** A new issue would probably be closed the same

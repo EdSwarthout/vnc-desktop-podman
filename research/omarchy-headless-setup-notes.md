@@ -1,13 +1,13 @@
 # Headless Omarchy in rootless podman over wayvnc: starting notes
 
-Status: **superseded** by `../omarchy/` (2026-11-17). This merges the two
+Status: **superseded** by `../container/omarchy/` (2026-11-17). This merges the two
 starting notes that were in `logs/`:
 - `setup-headless-podman-omarchy.md`: the original recipe, using the online installer;
 - `setup-headless-podman-omarchy-from-iso.md`: the revision once the installer was retired.
 
 Both were AI-generated suggestions, not tested instructions. Each section below gives
 what they suggested, then **what actually happened** when it was built (see
-`../omarchy/README.md` for the working setup).
+`../container/omarchy/README.md` for the working setup).
 
 ## 1. Getting Omarchy into an image
 
@@ -31,7 +31,7 @@ user. Watch for live-boot autologin hooks and first-boot wizards in
   no Hyprland, uwsm or waybar. The installed system is the ISO's
   `arch/x86_64/omarchy-root.img.zst`: a raw **btrfs** filesystem (label
   `omarchy-root-image`, subvolume `omarchy-root`).
-  - `../omarchy/extract.sh` restores it with `btrfs restore -x -m -S` in a throwaway
+  - `../container/omarchy/extract.sh` restores it with `btrfs restore -x -m -S` in a throwaway
     container: no loop mount, no host root.
   - Owners, modes and file caps survive. **Setuid bits don't**; the `rootfs` stage
     puts them back from pacman's mtree files.
