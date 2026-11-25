@@ -3,7 +3,7 @@
 How to drive the Chrome of an instance from outside it: from the host, or from a
 parent instance for a nested one (`cc8u` → `cc8u_1u`). The helpers are in
 [`env.rc`](env.rc) here, which the top-level `env.rc` sources. They work with every
-stage from `chrome` on; the [image](#the-browser-image) built from the
+image from `browser` on; the [image](#the-browser-image) built from the
 [`Containerfile`](Containerfile) here adds Chrome Canary and the tools.
 
 ## Helpers
@@ -12,7 +12,7 @@ stage from `chrome` on; the [image](#the-browser-image) built from the
   DevTools (remote debugging) port open at `http://127.0.0.1:9222` (`d_chrome_port`)
   and waits until the port answers. If that Chrome is already running, the URLs open
   in it; started without a URL, it shows `chrome://version/` (version, command line
-  and profile path of the browser you got). `d_chrome_bin=google-chrome-canary d_chrome` starts Canary instead, `d_chrome_bin=chromium` Chromium (Arch Linux's stages) (own
+  and profile path of the browser you got). `d_chrome_bin=google-chrome-canary d_chrome` starts Canary instead, `d_chrome_bin=chromium` Chromium (Arch Linux's images) (own
   profile; give it another `d_chrome_port` to run both at once).
 - **`d_chrome_mcp`** prints the command that registers that browser with Claude Code
   as MCP server `chrome-<instance>`. It only prints: the command changes your Claude
@@ -25,7 +25,7 @@ stage from `chrome` on; the [image](#the-browser-image) built from the
   instance (browser image only). Its commands are the MCP server's tools. It starts
   the CLI's daemon when needed; `d_devtools stop` ends it.
 - **`d_test`** (top-level `env.rc`) checks "Chrome renders a page (headless)" for
-  every stage from `chrome` on.
+  every image from `browser` on.
 
 ```bash
 source env.rc; d_select 1; d_run
@@ -33,7 +33,7 @@ d_chrome https://example.com
 d_exec curl -s http://127.0.0.1:9222/json/list      # the open pages, as JSON
 d_chrome_mcp                                        # prints: claude mcp add chrome-cc1u -- podman exec -i cc1u …
 
-# with the browser image (d_distro=chrome d_target=devtools):
+# with the browser image (d_target=devtools):
 d_devtools list_pages
 d_devtools navigate_page 1 --url https://example.com
 d_devtools take_snapshot 1                          # the page as an accessibility tree, with element uids
@@ -50,9 +50,9 @@ with `d_devtools_opts`, e.g. `d_devtools_opts=(--performanceCrux)` or `(--catego
 
 ## The browser image
 
-`d_distro=chrome` selects [`Containerfile`](Containerfile) here: Ubuntu's `chrome`
-stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `devtools`, image
-`u2604chrome:devtools`:
+`d_target=devtools` selects [`Containerfile`](Containerfile) here: Ubuntu's `browser`
+stage (stable Chrome, TigerVNC/noVNC, nested podman, the CLI installers) plus, in its
+stage `ubuntu`, image `vnc-desktop-ubuntu:devtools`:
 
 - **Google Chrome Canary** (`google-chrome-canary`, from the apt repository that the
   stable Chrome set up), behind the same `--no-sandbox` wrapper as stable. Stable
@@ -79,13 +79,13 @@ stage (stable Chrome, TigerVNC/noVNC, nested podman) plus, as stage `devtools`, 
   (video from screenshots or the display).
 
 ```bash
-d_distro=chrome d_target=devtools d_build    # builds ubuntu's chrome stage first
-d_select 1; d_distro=chrome d_target=devtools d_run        # cc1c, VNC 7001, noVNC 6181
-d_distro=chrome d_chrome_bin=google-chrome-canary d_chrome https://example.com
-d_distro=chrome d_exec node my-script.js     # a Puppeteer/Playwright script in the home
+d_target=devtools d_build                    # builds vnc-desktop-ubuntu:browser first
+d_select 1; d_target=devtools d_run          # cc1c, VNC 7001, noVNC 6181
+d_target=devtools d_chrome_bin=google-chrome-canary d_chrome https://example.com
+d_target=devtools d_exec node my-script.js   # a Puppeteer/Playwright script in the home
 cp chrome/search_screenshot.py "$d_home"/    # the example below
-d_distro=chrome d_exec python3 search_screenshot.py "rootless podman" -o search.png
-d_distro=chrome d_test 20 devtools           # the usual checks
+d_target=devtools d_exec python3 search_screenshot.py "rootless podman" -o search.png
+d_test 20 devtools                           # the usual checks
 ```
 The versions of Canary, the npm tools, `uv` and `playwright` are whatever is current
 when the layer is built; `d_build_fresh` renews them.

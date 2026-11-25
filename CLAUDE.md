@@ -1,60 +1,104 @@
 # CLAUDE.md — vnc-desktop-podman
 
-Rootless-podman image: Ubuntu 26.04 + XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE or Cinnamon,
-or Debian 13 (trixie) + GNOME Shell, or Arch Linux + Openbox, over TigerVNC/noVNC, with
-Chrome (Chromium on Arch), Claude Code and nested podman (plus smaller headless/xterm stages),
-and an OpenCode image on Ubuntu's LXQt (`opencode/`), a Google Antigravity image
-on Ubuntu's LXQt (`antigravity/`), a Grok image on Ubuntu's LXQt (`grok/`), and a
-T3 Code image on Ubuntu's LXQt (`t3code/`).
-See `README.md` for user-facing setup.
+Rootless-podman images over TigerVNC/noVNC, with Google Chrome (Chromium on Arch), the
+coding-agent CLI installers (Claude Code and others) and nested podman, in three layers:
+- **distros** `ubuntu` (26.04), `debian` (13 trixie), `fedora` (45), `archlinux` (rolling):
+  `<distro>/Containerfile`, stages `base` → `vnc` → `browser`;
+- **desktops** on a distro's `browser`: `<desktop>/Containerfile`, one stage per distro
+  that has it: Ubuntu xfce, lxqt, gnome (Flashback), kde, mate, cinnamon; Debian gnome
+  (Shell); Fedora xfce, lxqt; Arch openbox;
+- **agent desktops** `<desktop>-<agent>` on a desktop: `<agent>/Containerfile`:
+  `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-claude` (Ubuntu);
+plus `devtools` (`chrome/`, Chrome automation on Ubuntu's `browser`).
+Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setup.
 
 ## Files
 - `ubuntu/Containerfile` — stages `base` (headless + nested rootless podman) →
-  `vnc` (TigerVNC/noVNC, xterm session) → `chrome` → `xfce` / `lxqt` / `gnome` / `kde` / `mate` / `cinnamon`.
-  `d_target` in `env.rc` picks one (default `xfce`); images are tagged
-  `u2604cc:<stage>`. Package lists are kept **sorted**.
-- `debian/Containerfile` — Debian trixie: `base` → `vnc` → `chrome` → `gnome`
-  (GNOME Shell), tagged `d13cc:<stage>`. Its `base`/`vnc`/`chrome` follow
-  Ubuntu's nearly line for line: **change both** when changing those stages.
-  `d_distro` (`ubuntu` default | `debian`) in `env.rc` picks the directory. The build
-  context is the repo root for both, so they `COPY` the shared `start.sh` and
-  `nested-subids`; anything distro-specific goes in that distro's directory.
-- `archlinux/Containerfile` — Arch Linux (rolling): `base` → `vnc` → `chromium` → `openbox`,
-  tagged `archcc:<stage>`, `d_distro=archlinux`, instances `ccNa`, ports
-  7050+N / 6230+N. `base`/`vnc` follow Debian's; what differs is under
-  "Arch Linux" in the design decisions. `chromium` stands where `chrome` does.
-- `start.sh` — entrypoint (PID 1's child under `--init`), shared by all stages:
+  `vnc` (TigerVNC/noVNC, xterm session) → `browser` (Chrome + `cli-installers/`).
+  The other distros' Containerfiles follow it. Package lists are kept **sorted**.
+- `debian/Containerfile` — Debian trixie, same stages; follows Ubuntu's nearly line for
+  line: **change both** when changing those stages.
+- `fedora/Containerfile` — Fedora 45 (`registry.fedoraproject.org/fedora:45`), same
+  stages with dnf: see "Fedora" in the design decisions.
+- `archlinux/Containerfile` — Arch Linux, same stages with pacman, Chromium in `browser`:
+  see "Arch Linux" in the design decisions.
+  The build context is the repo root for all, so they `COPY` the shared `start.sh`,
+  `nested-subids`, `vncserver-wrapper` and `cli-installers/`; anything distro-specific
+  goes in that distro's directory.
+- `xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` — one `Containerfile`
+  each: `ARG BASE`, then one stage per distro named after it (`FROM ${BASE} AS ubuntu`),
+  each the desktop's package `RUN` (with the distro's cache tail), a `RUN` writing
+  `/usr/local/bin/vnc-session`, and its tweaks. `gnome/` has two different stages
+  (`ubuntu`: Flashback, `debian`: Shell).
+- `opencode/`, `antigravity/`, `claude/` — agent desktops, same pattern on a desktop.
+  `opencode`: OpenCode Desktop (Electron `.deb` / `.rpm` from opencode.ai's "latest" URL,
+  not GitHub's; arch `dpkg --print-architecture` for the `.deb`, `uname -m` for the
+  `.rpm`; installs to `/opt/OpenCode`; `/usr/local/bin/ai.opencode` wrapper with
+  `--no-sandbox --password-store=basic`, both `.desktop` files pointed at it), `opencode` =
+  a symlink to the bundled CLI (`/opt/OpenCode/resources/opencode-cli`). The app's own
+  updater can't install a package without root: rebuild. The app copies its CLI into the
+  home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB) and runs `opencode-cli
+  serve` from there; no switch found to stop that. `opencode/README.md`.
+  `antigravity`: one stage `app` (no package manager: the Electron tarball, version +
+  execution id from the hub updater's `/releases` JSON, `ANTIGRAVITY_VERSION`/
+  `ANTIGRAVITY_TGZ` override; `linux-x64`/`linux-arm` after `uname -m`; unpacked in
+  `/opt/Antigravity`, build fails on a `not found` in `ldd`; wrapper with `--no-sandbox
+  --password-store=basic`; our own `antigravity.desktop`; Python SDK `google-antigravity`
+  in a user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`), and `ubuntu` and
+  `fedora` are `FROM app`. `antigravity/README.md`.
+  `claude`: stage `ubuntu` on `gnome` (see "`claude-desktop`" below).
+- `cli-installers/` — `install_claude`, `install_agy` (Google's `install.sh` →
+  `~/.local/bin/agy`), `install_opencode` (opencode's build in `~/.opencode/bin`, first on
+  PATH via `.bashrc`), `install_grok` (xAI's `https://x.ai/cli/install.sh` → `~/.grok/bin`,
+  first on PATH via `.bashrc`; version argument or `GROK_CHANNEL`; sets `SHELL` from passwd
+  when unset, as the installer picks the rc file by it; removes the installer's `agent`
+  links), `install_t3code` (`https://t3.codes/install.sh` → `~/.t3/runtime/versions/<v>`
+  (~500 MB) + `~/.local/bin/t3`; `T3CODE_VERSION`/`T3CODE_CHANNEL`; `t3` serves on
+  127.0.0.1:3773 and prints a pairing URL; `t3 up`/`t3 service` need systemd). Every
+  `browser` stage COPYs them to `/usr/local/bin`; run by the user, self-updating.
+- `vncserver-wrapper` — `/usr/local/bin/vncserver` in every `vnc` stage (shadows the
+  packaged one): `vncserver :N [-fg] [-localhost yes|no] [Xvnc options]`, runs
+  `Xtigervnc` or `Xvnc` (whichever exists) and `~/.config/tigervnc/xstartup` in the
+  foreground with the session environment Debian's perl `vncserver` sets
+  (`XDG_SESSION_TYPE=x11`: Cinnamon's muffin quit without it), logs to stdout, exits when
+  either ends.
+- `start.sh` — entrypoint (PID 1's child under `--init`), shared by all images:
   first-boot seeding of the home volume and `nested-subids`; then, if the
-  stage has `vncserver`, runs `vncserver -fg` and `websockify` and exits when
+  image has `vncserver`, runs `vncserver -fg` and `websockify` and exits when
   either does, so the container stops; otherwise (`base`) `exec sleep infinity`.
 - `nested-subids` — `/usr/local/sbin`; `start.sh` runs it via `sudo` at every
   boot to fit subids and `newuidmap` caps to the container.
 - `env.rc` — host-side bash helpers, `source`d from any cwd; defaults at the top,
-  then `.env` (may override `d_dir`, `d_user`, `d_distro`, `d_target`, …), then derived values;
-  per-distro settings (`d_bases`, `d_images`, `d_targets_<distro>`, apt cache)
-  are resolved at call time by `_d_distro`, so `d_distro=debian d_build` works,
-  and `d_build`/`d_run` refuse a `d_target` that isn't a stage of that distro: `d_0`, `d_build`,
-  `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`, `d_logs`,
-  `d_all N [STAGE...]` (build + run every stage on instances N, N+1, …, then
-  `eval "$d_all_cmd"` in the background per instance, default `d_vnc`), `d_screenshots N [STAGE...]` (retake
-  `docs/<distro>/<stage>.png` on a throwaway instance N), `d_test N [STAGE...]`
-  (build, run on a throwaway instance N, check, remove: see "Testing a change"),
-  `d_exec [-s] [-d] CMD` (`podman exec` minus ambient caps; `-s`: with the
+  then `.env` (may override `d_dir`, `d_user`, `d_distro`, `d_target`, …), then derived values.
+  `d_distro` ∈ `d_images` keys; `d_target` is one of `d_stages` (`base vnc browser`:
+  `<distro>/Containerfile --target <stage>`), a desktop (`<dir>/Containerfile --target
+  <distro>`, BASE `localhost/<image>:browser`; `d_dirs` maps `devtools` → `chrome`) or
+  `<desktop>-<agent>` (`<agent>/Containerfile --target <distro>`, BASE
+  `localhost/<image>:<desktop>`; agents in `d_agents`). `_d_distro` works all that out at
+  call time (`_d_cf`, `_d_stage`, `_d_parent`, `_d_base`, `_d_layer`), so
+  `d_distro=fedora d_target=lxqt d_build` works; `d_build` builds `_d_parent` first, and
+  `d_build`/`d_run` refuse a target that isn't in `d_targets_<distro>` (or a
+  `<desktop>-<agent>` whose Containerfile has no `<distro>` stage). Functions: `d_0`,
+  `d_build`, `d_build_fresh`, `d_select N`, `d_run_new`, `d_run`, `d_vnc`, `d_novnc`,
+  `d_logs`, `d_all N [TARGET...]` (build + run every target on instances N, N+1, …, then
+  `eval "$d_all_cmd"` in the background per instance, default `d_vnc`), `d_screenshots N
+  [TARGET...]` (retake `docs/<distro>/<target>.png` on a throwaway instance N), `d_test N
+  [TARGET...]` (build, run on a throwaway instance N, check, remove: see "Testing a
+  change"), `d_exec [-s] [-d] CMD` (`podman exec` minus ambient caps; `-s`: with the
   session's D-Bus/XDG environment), `d_run_cmd [CMD...]` (default `bash`: throwaway
   `--rm -it` container `<name>-cmd` on instance N's image and home, beside a running
-  instance: no `--replace`, no ports, no `start.sh`, no ambient caps), `d_rm [-f] [N]` (container **and home**; asks
-  unless `-f`). `d_build` ends with a summary (time; apt "downloaded/needed" per
-  apt step that ran, `0 B/…` = all from the shared cache; for archlinux, pacman
-  "downloaded/installed" per step) and labels the image
-  `org.opencontainers.image.description` ("<distro>: <stage text>" from
-  `d_desc_distros`/`d_descs`, keyed `<distro>:<stage>` or `<stage>`; `d_description`
-  overrides): **a new stage or distro gets an entry there**. `_d_wait_ready` waits
-  for password file + noVNC + a visible window; `_d_rm` is `d_rm` without asking.
-- `chrome/Containerfile` — `d_distro=chrome`, one stage `devtools`, tagged
-  `u2604chrome:devtools`: `FROM localhost/u2604cc:chrome` (so `d_build` builds Ubuntu's
-  `chrome` stage first: `d_parents[chrome]="ubuntu chrome"`, which also makes it use
-  Ubuntu's apt cache) + `google-chrome-canary` (wrapper like stable's), Openbox +
-  xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
+  instance: no `--replace`, no ports, no `start.sh`, no ambient caps), `d_rm [-f] [N]`
+  (container **and home**; asks unless `-f`). `d_build` ends with a summary (time; per
+  package step that ran: apt "downloaded/needed", `0 B/…` = all from the shared cache;
+  dnf "downloaded/needed"; pacman "downloaded/installed") and labels the image
+  `org.opencontainers.image.description` ("<distro>: <target text>" from
+  `d_desc_distros`/`d_descs`, keyed `<distro>:<target>` or `<target>`; for an agent
+  desktop "<agent text>; <desktop text>"; `d_description` overrides): **a new target or
+  distro gets an entry there**. `_d_wait_ready` waits for password file + noVNC + a
+  visible window; `_d_rm` is `d_rm` without asking.
+- `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser`,
+  tagged `vnc-desktop-ubuntu:devtools`): `google-chrome-canary` (wrapper like stable's),
+  Openbox + xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
   (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
   `lighthouse`; `NODE_PATH` set), and Python's `playwright` in a venv made with
   `uv`: `/opt/uv/bin/uv` and `/opt/venv`, both owned by the user and outside the
@@ -62,85 +106,45 @@ See `README.md` for user-facing setup.
   `uv pip install` without root. `chrome/search_screenshot.py` is a Python example
   (web search → PNG via the DevTools port). `install_chrome_devtools` (run by the
   user, like `install_claude`) copies `chrome-devtools-mcp`'s bundled skills to
-  `~/.claude/skills`. Instances `ccNc`, ports 7000+N / 6180+N.
-- `opencode/Containerfile` — `d_distro=opencode`, one stage `lxqt`, tagged
-  `u2604opencode:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[opencode]="ubuntu lxqt"`,
-  as for chrome) + OpenCode Desktop (Electron `.deb` from opencode.ai's "latest" URL,
-  not GitHub's; `/usr/local/bin/ai.opencode` wrapper with `--no-sandbox
-  --password-store=basic`, both `.desktop` files pointed at it), `opencode` = a symlink
-  to the desktop's bundled CLI (`/opt/OpenCode/resources/opencode-cli`, one copy), and
-  `install_opencode` (run by the user, like `install_claude`: opencode's own build in
-  `~/.opencode/bin`, self-updating, first on PATH via `.bashrc`). The app's own updater can't install a `.deb` without root: rebuild. The
-  app copies its CLI into the home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB)
-  and runs `opencode-cli serve` from there; no switch found to stop that.
-  Instances `ocNu` (`d_name0s`/`d_letters` in `env.rc`; nested `<this>_ocNu`), ports
-  7150+N / 6330+N (7100/6280 are the `research` branch's omarchy). `opencode/README.md`.
-- `antigravity/Containerfile` — `d_distro=antigravity`, one stage `lxqt`, tagged
-  `u2604antigravity:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[antigravity]="ubuntu lxqt"`)
-  + the Antigravity App (Electron tarball, no `.deb`: version + execution id from the
-  hub updater's `/releases` JSON, `ANTIGRAVITY_VERSION`/`ANTIGRAVITY_TGZ` override;
-  `linux-x64`/`linux-arm` after `dpkg --print-architecture`; unpacked in
-  `/opt/Antigravity`, build fails on a `not found` in `ldd`; wrapper
-  `/usr/local/bin/antigravity` with `--no-sandbox --password-store=basic`; our own
-  `antigravity.desktop`, the tarball has none), `install_agy` (run by the user, like
-  `install_claude`: Google's `install.sh` → `~/.local/bin/agy`, self-updating; the CLI
-  binary has no App-download code), and the Python SDK
-  `google-antigravity` from PyPI (wheels carry the `localharness` runtime) in a
-  user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`. Instances `agNu`, ports
-  7200+N / 6380+N. `antigravity/README.md`.
-- `grok/Containerfile` — `d_distro=grok`, one stage `lxqt`, tagged
-  `u2604grok:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[grok]="ubuntu lxqt"`)
-  + `install_grok` (run by the user, like `install_claude`: xAI's
-  `https://x.ai/cli/install.sh` → `~/.grok/bin`, self-updating, first on PATH via
-  `.bashrc`; latest version, or a version argument, or `GROK_CHANNEL`; sets `SHELL`
-  from passwd when unset, as the installer picks the rc file by it; removes the
-  installer's `agent` links). Instances `gkNu` (`d_name0s`/`d_letters`; nested
-  `<this>_gkNu`), ports 7250+N / 6430+N. `grok/README.md`.
-- `t3code/Containerfile` — `d_distro=t3code`, one stage `lxqt`, tagged
-  `u2604t3code:lxqt`: `FROM localhost/u2604cc:lxqt` (`d_parents[t3code]="ubuntu lxqt"`)
-  + `install_t3code` (run by the user, like `install_claude`: `https://t3.codes/install.sh`
-  → self-contained release in `~/.t3/runtime/versions/<v>` (~500 MB) + launcher
-  `~/.local/bin/t3`; `t3 update`; `T3CODE_VERSION`/`T3CODE_CHANNEL`). `t3` serves the GUI
-  on 127.0.0.1:3773 and prints a pairing URL (opens no browser here); `t3 up`/`t3
-  service` fail (systemd lingering). Instances `tcNu` (`d_name0s`/`d_letters`; nested
-  `<this>_tcNu`), ports 7300+N / 6480+N. `t3code/README.md`.
+  `~/.claude/skills`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
-  `LICENSE`, `start.sh`, `nested-subids` and `*/user_files`. **A new `COPY` source needs
-  a `!` line here.**
+  `LICENSE`, `start.sh`, `nested-subids`, `vncserver-wrapper`, `cli-installers/` and
+  `*/user_files`. **A new `COPY` source needs a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
   add` line for `chrome-devtools-mcp` run in the instance via `podman exec -i`: the
-  image's binary if there is one, else `npx`). `d_chrome_bin=google-chrome-canary`
-  for Canary. `d_devtools CMD...` runs the `chrome-devtools` CLI (same tools as the
-  MCP server; daemon in the instance, started on demand) in a `devtools` instance.
+  image's binary if there is one, else `npx`). `d_chrome_bin=google-chrome-canary d_chrome`
+  for Canary, `d_chrome_bin=chromium` on Arch. `d_devtools CMD...` runs the
+  `chrome-devtools` CLI (same tools as the MCP server; daemon in the instance, started on
+  demand) in a `devtools` instance.
   Both get `_d_devtools_opts`: `--browserUrl`, no usage statistics, no CrUX,
   `--workspace=/home/<user>` (+ `d_devtools_opts`).
   `chrome/README.md` — the automation options compared, and what has been tried.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
-   `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot` (xfce, lxqt, gnome, kde, mate + cinnamon); copy it out
+   `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot`; copy it out
   with `podman cp` and look at it to check a desktop by script.
    `tests/lock.sh` — sends every lock request it knows (screensaver D-Bus names,
   desktops' lock commands, Super+L, Ctrl+Alt+L) and after each types into its own
   xterm with `xdotool` (XTEST, which a locker's grab would divert): FAIL if the
   text doesn't arrive. Needs the session bus (`d_exec -s`); throwaway instances only.
-- `docs/` — `README.md` gallery with one screenshot per stage of the desktop
-  on a fresh home (`ubuntu/<stage>.png`, `debian/<stage>.png`, `archlinux/<stage>.png`); retake a stage's picture when its initial
-  look changes (`[d_distro=debian] d_screenshots N <stage>`). Taken by hand, not by
-  `d_screenshots`: `archlinux/chromium.png`, `antigravity/lxqt-nested.png` (the App in
-  `ag1u` and a nested `ag1u_ag1u` on arm64).
+- `docs/` — `README.md` gallery with one screenshot per desktop on a fresh home
+  (`docs/<distro>/<target>.png`); retake a desktop's picture when its initial look changes
+  (`[d_distro=…] d_screenshots N <target>`). Taken by hand, not by `d_screenshots`:
+  `archlinux/browser.png`, `antigravity/lxqt-nested.png` (the App in `ag1u` and a nested
+  `ag1u_ag1u` on arm64).
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.
 
 ## Where you're probably running
 Claude Code usually runs *inside* an instance (e.g. `cc1u`) with this repo on
-the home volume. Every stage has a nested rootless podman
+the home volume. Every image has a nested rootless podman
 for scratch containers, but it is *not* the host's podman, and the host paths
 (`$d_dir`, the NFS apt cache) are not visible. When `$container` is set, `env.rc`
 switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_N<distro letter>` (e.g. `cc1u_1d`) with home `~/Containers/<that name>`,
 the instance's `/var/cache/apt-<distro>` cache mounts, no `--hostname`), so `d_build`/`d_run` here
 build and run a nested instance in the nested podman, not a host one. Check things in the container directly (`/proc/1/environ`,
-`mountpoint /var/cache/apt-ubuntu /var/cache/apt-debian`, `~/.config/tigervnc`) and test `env.rc`
+`mountpoint /var/cache/apt-ubuntu /var/cache/apt-debian /var/cache/apt-fedora`, `~/.config/tigervnc`) and test `env.rc`
 changes with a stubbed `podman`, both ways (`container=` for host behaviour):
 ```bash
 T=$(mktemp -d)   # d_run really creates the home dir and its passwd.init there
@@ -148,13 +152,14 @@ VNC_PASSWORD=x bash -c 'podman(){ echo "[podman $*]"; }; source ./env.rc; d_dir=
 VNC_PASSWORD=x container= bash -c 'podman(){ echo "[podman $*]"; }; source ./env.rc; d_dir='$T'/h; d_select 1; d_run'
 ```
 (Homes, names and ports are worked out at call time, so setting `d_dir` after
-sourcing works; add `d_distro=debian` to a command for Debian. `d_run_new` loops
+sourcing works; add `d_distro=debian d_target=gnome` to a command for Debian, and
+`d_target=lxqt-opencode` etc. for an agent desktop. `d_run_new` loops
 on `podman container exists`, so stub that to fail.)
 The user builds, runs and pushes from the host. This clone has an `origin`
 (GitHub), but don't push from here: commit locally and leave the push to the user.
 
 ## Design decisions (don't undo without asking)
-- **Home is a volume** (`$d_dir/u2604ccN` or `$d_dir/d13ccN` → `/home/ed`). Anything put in
+- **Home is a volume** (`$d_dir/u2604ccN`, `$d_dir/d13ccN`, … → `/home/ed`). Anything put in
   `/home/ed` at build time is hidden; per-user setup belongs in `start.sh`'s
   first-boot blocks (guarded by "file doesn't exist yet") or runs at runtime.
   The user's own files for new homes go in `<distro>/user_files/` (gitignored, may
@@ -164,22 +169,25 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   unpacks it as the last step of the "no `~/.bashrc`" first-boot block, over
   `/etc/skel`'s files. The `D_NAME` `.bashrc` addition runs only when
   `$D_NAME` is set and the `.bashrc` doesn't mention it yet.
-- **Claude Code** is installed by the user at runtime via `install_claude`
-  (native installer → `~/.local/bin`, self-updating). Not baked into the image.
-  Ubuntu's and Debian's `base` append a `~/.local/bin` PATH check to `/etc/skel/.bashrc`
-  (the skel only has it in `.profile`, which a terminal's bash doesn't read), so a new
-  home finds `claude`, `t3` and the like. Small CLI tools the agent images share
-  (`fd-find`, `fzf`, `zstd`) are in `base`; `featherpad` is in Ubuntu's `lxqt`.
+- **Claude Code** and the other agent CLIs are installed by the user at runtime via
+  `install_claude` etc. (`cli-installers/`, in every `browser`; vendors' installers →
+  the home, self-updating). Not baked into the image. Ubuntu's and Debian's `base`
+  append a `~/.local/bin` PATH check to `/etc/skel/.bashrc` (the skel only has it in
+  `.profile`, which a terminal's bash doesn't read), so a new home finds `claude`, `t3`
+  and the like; Fedora's skel `.bashrc` has one already (the build checks). Small CLI
+  tools the agents share (`fd-find`, `fzf`, `zstd`) are in `base`; `featherpad` is in
+  `lxqt`. Grok and T3 Code are only installers, no agent desktop (decided).
 - **Shared apt caches**, one per distro (same file names, different
   contents), NFS-shared between machines: host `$d_dir/apt-cache-<distro>/archives`
-  (`apt-cache-ubuntu`, `apt-cache-debian`), or
+  (`apt-cache-ubuntu`, `apt-cache-debian`; Fedora's and Arch's under the same scheme, see
+  there), or
   `d_aptcaches[<distro>]` from `.env`. Each image's apt keeps `.deb`s in
   `/var/cache/apt-<distro>` (`Dir::Cache::archives`, apt.conf.d
   `vnc-desktop-archives`; apt creates the dir when nothing's mounted).
   `d_build` mounts the distro's cache there; `d_run` mounts every distro's
-  that exists (`/var/cache/apt-ubuntu`, `/var/cache/apt-debian`), and nested,
-  `env.rc` uses those mounts, so nested builds of either distro get their own
-  cache. `docker-clean` is replaced by `docker-no-pkgcache`; every apt `RUN` ends
+  that exists (`/var/cache/apt-<distro>` for each), and nested, `env.rc` uses those
+  mounts, so nested builds of any distro get their own cache. Desktops and agents use
+  their distro's cache, with its tail. `docker-clean` is replaced by `docker-no-pkgcache`; every apt `RUN` ends
   with `{ mountpoint -q /var/cache/apt-<distro> || apt-get clean; }` and
   `rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin`. Keep that tail on new
   apt `RUN`s. Not a buildah cache mount, because it must be shareable over NFS.
@@ -195,13 +203,23 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **User and UID** are build args (`USERID`, `USER_UID`; `d_build` passes
   `$d_user` and `id -u`), so keep-id lines up for any host user. Scripts use
   `$USERID` / `$SUDO_USER`, not a literal `ed`.
-- **Session comes from the image**: each stage with a display installs
-  `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt` / Flashback's parts / `startplasma-x11` / `mate-session` / `cinnamon-session-cinnamon2d`); the home's
-  `xstartup` only runs it under `dbus-launch`, so a home works with any stage.
+- **Session comes from the image**: each image with a display installs
+  `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt` / Flashback's parts / `startplasma-x11` / `mate-session` / `cinnamon-session-cinnamon2d` / `openbox-session`); the home's
+  `xstartup` only runs it under `dbus-launch`, so a home works with any image.
+  `vncserver` is the shared `vncserver-wrapper` in every distro (Debian/Ubuntu's perl
+  one has its own options and logs, Arch's and Fedora's need systemd); `_d_session_sh`
+  still also matches the perl one, for instances on older images.
+- **Layers**: a desktop or agent `Containerfile` has one stage per distro, named after
+  it, chosen with `--target <distro>`; a pair with no stage isn't supported (env.rc
+  refuses it). A stage with nothing distro-specific is shared (`antigravity`: `FROM app
+  AS ubuntu`). Agents and `devtools` keep their instance prefixes and old homes
+  (`d_name0s`, `d_letters`, `d_home_names` keyed by layer / `<distro>:<layer>`), so homes
+  from before the restructure still work.
 - **LXQt without recommends** needs explicit `breeze-icon-theme`,
-  `libxcb-cursor0`, `lxqt-menu-data`, `openbox`, `qt6-svg-plugins` (see the
+  `libxcb-cursor0`, `lxqt-menu-data`, `openbox`, `qt6-svg-plugins` on Ubuntu (see the
   `lxqt` stage comment); the default panel drops the `volume` plugin
-  (`/etc/xdg/lxqt/panel.conf`; no sound device, so it showed a red X). Check a
+  (`/etc/xdg/lxqt/panel.conf`, written on Ubuntu, edited in place on Fedora, whose
+  `lxqt-panel` ships it there; no sound device, so it showed a red X). Check a
   new desktop with `tests/screenshot.sh`.
 - **Ubuntu's `gnome` is GNOME Flashback**, not GNOME Shell: Shell 50 is Wayland-only and
   needs logind (tried with a mock logind + PipeWire + `--devkit`: it only
@@ -211,8 +229,8 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   for Log Out. The panel layout is forced to `gnome-flashback` (Ubuntu's
   default wants an indicator applet that isn't installed). gnome-flashback's
   `screensaver` component is off (it locked after 5 idle minutes; no password).
-- **Debian** (`debian/`): only Debian's default desktop, GNOME, as stage
-  `gnome`. Instances have their own names, homes and ports (see the instance
+- **Debian** (`debian/`): only Debian's default desktop, GNOME (`gnome/`, stage
+  `debian`). Instances have their own names, homes and ports (see the instance
   entry below). Debian's `gnome` is real
   **GNOME Shell** (GNOME 48 still has an X11 session). `gnome-session` without
   systemd falls back to starting the session itself, but aborts without a
@@ -229,8 +247,27 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   glycin, so the `NET_RAW`/`bwrap` gotcha doesn't break GTK there. Debian's
   `ping` ships without file caps (it relies on `ping_group_range`, "0 0" in the
   container), so `base` does `setcap cap_net_raw=ep /usr/bin/ping` like Ubuntu's.
-- **Arch Linux** (`archlinux/`): stages `base`, `vnc`, `chromium`, `openbox`; the shared
-  `start.sh` and `nested-subids` run unchanged, so the image adapts to them:
+- **Fedora** (`fedora/`, Fedora 45): desktops `xfce`, `lxqt`, agents `lxqt-opencode`,
+  `lxqt-antigravity`. Instances `ccNf`, ports 7350+N / 6530+N, homes `f45ccN`.
+  - *Package cache*: dnf5 with `keepcache=True`, `cachedir` and `system_cachedir` (the
+    one root uses) = `/var/cache/apt-fedora` in `dnf.conf`, so the shared
+    `apt-cache-fedora` holds rpms **and repository metadata**; `install_weak_deps=False`
+    (= `--no-install-recommends`). Every dnf `RUN` ends with `{ mountpoint -q
+    /var/cache/apt-fedora || dnf clean all; }`.
+  - Desktops are named packages, not Fedora's groups (`@xfce-desktop`, `@lxqt-desktop`
+    bring SDDM, NetworkManager, abrt, …). No `xfce4-screensaver`, `light-locker` or
+    `xfce4-power-manager`. `startlxqt` is in `lxqt-x11-session`, not `lxqt-session`.
+    `xfce-polkit` (required by `xfce4-session`) has its autostart entry deleted: its
+    agent fails without a system bus and showed an error dialog at every login.
+  - *vnc*: `tigervnc-x11-server` (Xvnc; `vncpasswd` from `tigervnc-server-common`),
+    `novnc`, `python3-websockify`, `dbus-x11` (with X11 support, unlike Arch's).
+  - *browser*: Google's rpm `google-chrome-stable_current_$(uname -m).rpm` (x86_64 and
+    aarch64 exist), same wrapper; no `x-www-browser` alternatives.
+  - podman 6: `TMPDIR=/tmp` in `nested.conf` as on Arch; `pasta` made a hard link if
+    it is a symlink.
+- **Arch Linux** (`archlinux/`): stages `base`, `vnc`, `browser` (Chromium); desktop
+  `openbox` (`openbox/`, stage `archlinux`); the shared `start.sh` and `nested-subids`
+  run unchanged, so the image adapts to them:
   - *Package cache*: same scheme and names as apt's (`apt-cache-archlinux`,
     `/var/cache/apt-archlinux`, `d_aptcaches[archlinux]`), holding pacman's
     packages: `pacman.conf` gets `CacheDir = /var/cache/apt-archlinux/` and loses
@@ -240,11 +277,6 @@ The user builds, runs and pushes from the host. This clone has an `origin`
     /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } && rm -rf
     /var/lib/pacman/sync/*`. So an instance has no sync databases: as root,
     `pacman -Syu --needed PKG` to try a package.
-  - *`vncserver`*: Arch's takes only a display and runs the systemd-style
-    session, so `/usr/local/bin/vncserver` (bash, written in the `vnc` stage)
-    takes Debian's arguments and runs `Xvnc` + `~/.config/tigervnc/xstartup`
-    in the foreground. `_d_session_sh` knows both wrappers and X server names
-    (`Xtigervnc`, `Xvnc`).
   - *Session bus*: Arch's `dbus-launch` has no X11 support, so xstartup's
     `dbus-launch --exit-with-session` kills its bus at once (stdin is
     `/dev/null`); each `vnc-session` does `eval "$(dbus-launch --sh-syntax)"`
@@ -261,21 +293,21 @@ The user builds, runs and pushes from the host. This clone has an `origin`
     `podman build` puts an overlay over the build context with its upper dir in
     `$TMPDIR`, and `/var/tmp` is on the instance's overlay root ("mounting an
     overlay over build context directory … invalid argument").
-  - *`chromium`*: Arch's `chromium` package (Google Chrome is AUR-only) and
+  - *`browser`*: Arch's `chromium` package (Google Chrome is AUR-only) and
     the web fonts. No wrapper: `/usr/bin/chromium` is Arch's launcher, which
     reads `/etc/chromium-flags.conf` (`--no-sandbox --no-first-run
     --no-default-browser-check`); the build checks that `chromium --help`
     (stderr) lists the flag. The sandbox did work in a test without the flag;
-    `--no-sandbox` is kept to match Chrome's stages. `ENV BROWSER=chromium`.
-    `env.rc` treats the stage like `chrome` (`d_test`'s browser check uses
-    `google-chrome` or else `chromium`; `d_screenshots` skips it);
+    `--no-sandbox` is kept to match Chrome's images. `ENV BROWSER=chromium`.
+    `d_test`'s browser check uses `google-chrome` or else `chromium`;
     `d_chrome_bin=chromium d_chrome` for automation.
   - *`openbox`*: `openbox-session`, own `/etc/xdg/openbox/menu.xml` (the
     packaged one calls Debian's `x-terminal-emulator`; ours has Terminal, Chromium, Exit), an xterm from the
     system autostart, `scrot` for screenshots. Menu → Exit ends the session.
     No locker installed (`tests/lock.sh` passes).
-- **`claude-desktop`** (the Claude desktop app) is in Ubuntu's `gnome` stage only, on
-  purpose: it is still in beta, so don't add it to the other desktop stages. It
+- **`claude-desktop`** (the Claude desktop app) is only the agent desktop `gnome-claude`
+  on Ubuntu (`claude/`, stage `ubuntu`), on purpose: it is still in beta, so don't add
+  other pairs. It
   comes from Anthropic's apt repository: the Containerfile downloads the signing
   key (`https://downloads.claude.ai/keys/claude-code.asc`) and writes
   `claude-desktop.list` to the paths the package's own postinst uses, then
@@ -284,8 +316,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   .deb-download pattern used for Chrome: the only known .deb URL is versioned.
   It stores secrets in
   the default keyring (gnome-keyring, D-Bus activated). A new home has none, and
-  gnome-keyring's "choose a password" dialog left the app hanging, so `gnome`'s
-  `vnc-session` writes a passwordless plain-text keyring
+  gnome-keyring's "choose a password" dialog left the app hanging, so the wrapper
+  `/usr/local/bin/claude-desktop` (ahead of `/usr/bin`; menu entries pointed at it)
+  writes a passwordless plain-text keyring
   (`~/.local/share/keyrings/Default_keyring.keyring` + `default`) when the home
   has no `default`: it unlocks without a prompt. `gnome-keyring-daemon --unlock`
   with an empty password does *not* create a keyring. Secrets are unencrypted
@@ -305,16 +338,16 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `cinnamon-screensaver` is removed from the session's components and its
   D-Bus activation file deleted: gsettings alone (lock off, lockdown) don't
   stop an explicit lock request, and the user has no password to unlock with.
-  **Any new desktop stage: check that the screen can't lock.**
-- **Architectures**: Ubuntu and Debian build on amd64 and arm64 (the Chrome and
-  OpenCode `.deb` URLs use `dpkg --print-architecture`, which is the image's,
-  also in a cross build under emulation; upstream publishes both arches for
-  OpenCode Desktop and CLI); Arch Linux is amd64 only (Docker Hub's
+  **Any new desktop: check that the screen can't lock.**
+- **Architectures**: Ubuntu, Debian and Fedora build on amd64 and arm64 (the Chrome and
+  OpenCode `.deb` URLs use `dpkg --print-architecture`, the `.rpm` URLs and Antigravity
+  `uname -m`, which are the image's, also in a cross build under emulation; upstream
+  publishes both arches for OpenCode Desktop and CLI); Arch Linux is amd64 only (Docker Hub's
   `archlinux` has no arm64), so on arm64 (`uname -m` = `aarch64`) `env.rc` unsets
   its `d_bases`/`d_images` entries and `d_targets_archlinux`: no list has it, and
   `d_distro=archlinux` is refused. Google publishes official Linux arm64 builds of
-  Chrome since 2026 (Canary first). The shared apt caches
-  can serve both: `.deb` names carry the architecture. The user also runs
+  Chrome since 2026 (Canary first). The shared caches
+  can serve both: package names carry the architecture. The user also runs
   instances on an arm64 machine (DGX Spark), so Claude Code may be running on
   arm64 for builds and tests there: check `uname -m` / `dpkg --print-architecture`
   before assuming amd64, and keep changes architecture-neutral.
@@ -327,7 +360,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **Ports bind all interfaces** on purpose (trusted LAN). Accepted.
 - `PODMAN_USERNS=keep-id`; container user `ed` is UID 1001 by default, same as on the host.
 - `label=disable` (not `:z`) on mounts.
-- **Nested podman** (every stage): `/etc/subuid`/`subgid` are `ed:1:1000` +
+- **Nested podman** (every image): `/etc/subuid`/`subgid` are `ed:1:1000` +
   `ed:1002:64534` (subgid also `ed:0:1`, below), because the outer rootless container only has UIDs 0–65535;
   `containers.conf.d/nested.conf` disables cgroups and uses file events (no
   systemd), and sets `utsns = "host"` (outer seccomp blocks `sethostname`).
@@ -349,19 +382,24 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   Without a `.env`, a nested desktop gets a copy of this instance's VNC password file.
   No seccomp or further relaxation: ask before adding any.
 - Instance N (1-49) → container `ccN` + first letter of `d_distro` (`cc1u`,
-  `cc1d`), same hostname; home `${d_homes0[<distro>]}N`, default
-  `$d_dir/<image name>N` (`u2604cc1`, `d13cc1`). When `d_run` runs nested (`$container` set) it's
+  `cc1d`, `cc1f`, `cc1a`), same hostname; home `${d_homes0[<distro>]}N`, default
+  `$d_dir/<d_home_names entry>N` (`u2604cc1`, `d13cc1`, `f45cc1`, `archcc1`; with no entry
+  `<image>[-<layer>]N`, e.g. `vnc-desktop-ubuntu-claude1`). When `d_run` runs nested (`$container` set) it's
   `<this instance>_N<letter>` (e.g. `cc2u_1d`, then `cc2u_1d_1u`), home
   `~/Containers/<that name>`, with no `--hostname`; the parent's name comes
   from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
   falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
-  Debian 6950+N / 6130+N, chrome 7000+N / 6180+N, archlinux 7050+N / 6230+N,
-  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, grok 7250+N / 6430+N, t3code 7300+N / 6480+N, so every distro's instance N can run at once. A distro
-  can have its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`,
-  nested `<this instance>_oc1u`; antigravity `ag1u`; grok `gk1u`; t3code `tc1u`.
-  `d_select N` keeps only N; `_d_names` works out name, home and ports from
-  the current `d_distro` in every function that needs them (via
-  `_d_need_instance`), so `d_select 1; d_distro=debian d_run` is `cc1d`.
+  Debian 6950+N / 6130+N, devtools 7000+N / 6180+N, archlinux 7050+N / 6230+N,
+  opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, fedora 7350+N / 6530+N,
+  claude 7400+N / 6580+N, so every distro's instance N can run at once (7100/6280:
+  the `research` branch's omarchy; 7250/6430 and 7300/6480 were grok's and t3code's).
+  A layer has its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`
+  (`oc1f` on Fedora; the letter is the distro's), nested `<this instance>_oc1u`;
+  antigravity `ag1u`; claude `cl1u`; devtools `cc1c`. The same layer on two distros
+  shares its ports. `d_select N` keeps only N; `_d_names` works out name, home and
+  ports from the current `d_distro` and `d_target` in every function that needs them
+  (via `_d_need_instance`), so `d_select 1; d_distro=debian d_target=gnome d_run` is
+  `cc1d`.
 
 ## Conventions
 - `env.rc`: build podman commands as bash arrays, `echo` then run; quote
@@ -371,22 +409,22 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - Update README when a change is user-visible.
 - Commit only when asked, directly on `main` (no feature branches; the user
   usually tries a change on the host first, then says "commit this"). Never
-  push. Desktop variants are stages in their distro's `Containerfile` (not branches).
+  push. Desktops and agents are directories with a stage per distro (not branches).
 
 ## Testing a change from inside an instance
 You are `ed` with **no root** here (`sudo` only runs `nested-subids`), and the
-image has no apt lists. Everything below uses the nested podman.
-- **All of it in one go**: `source ./env.rc; [d_distro=debian] d_test N <stage>`
+image has no package lists. Everything below uses the nested podman.
+- **All of it in one go**: `source ./env.rc; [d_distro=…] d_test N <target>`
   (N unused, e.g. 1): builds, runs `<this instance>_N<letter>` on a new home, runs
   the checks below (ok/FAIL lines, non-zero status on a FAIL) and removes it again.
-  Logs and the screenshot are in `/tmp/d_test/<instance>-<stage>.{build.log,log,png}`:
+  Logs and the screenshot are in `/tmp/d_test/<instance>-<target>.{build.log,log,png}`:
   Read the PNG. `d_test_keep=1` leaves the instance up for a closer look (then
   `d_rm -f N`). The steps by hand:
-- **Build**: `source ./env.rc; [d_distro=debian] d_target=<stage> d_build > LOG 2>&1` — takes
+- **Build**: `source ./env.rc; [d_distro=…] d_target=<target> d_build > LOG 2>&1` — takes
   minutes (use a long timeout, log to a file, check the exit status). Changing
-  `start.sh` or anything in `base` rebuilds every later stage.
+  `start.sh` or anything in `base` rebuilds every later stage and all desktops on it.
 - **Run a throwaway instance**: `d_run_new` (picks a free number), then
-  `[d_distro=debian] d_target=<stage> d_run`. It is `<this instance>_N<letter>`, e.g. `cc1u_1u`, with home
+  `[d_distro=…] d_target=<target> d_run`. It is `<this instance>_N<letter>`, e.g. `cc1u_1u`, with home
   `~/Containers/cc1u_1u`, which is directly readable here: copy files in and
   out with plain `cp` (e.g. `cp -r tests ~/Containers/cc1u_1u/`), no `podman cp`
   needed. No `.env` is needed: it gets a copy of this instance's VNC password.
@@ -395,12 +433,16 @@ image has no apt lists. Everything below uses the nested podman.
   Start GUI apps with `d_exec -s -d <app>` (DISPLAY is already set; plain
   `podman exec -d` has ambient caps and no session bus).
 - **Root for experiments**: `podman exec -u root cc1u_1u sh -c 'apt-get update &&
-  apt-get install -y …'` (try packages there before editing the Containerfile).
-  `xdotool` (keys, clicks, window queries) is in every stage from `vnc` on. To query apt without an instance:
-  `podman run --rm --user root u2604cc:chrome sh -c 'apt-get update -qq; apt-cache policy PKG'`.
-- **Checks worth repeating** for any stage: `tests/tests.sh` inside it (4 ok);
+  apt-get install -y …'` (Fedora: `dnf install -y …`; try packages there before editing
+  the Containerfile). `xdotool` (keys, clicks, window queries) is in every image from
+  `vnc` on. To query packages without an instance:
+  `podman run --rm --user root vnc-desktop-ubuntu:browser sh -c 'apt-get update -qq; apt-cache policy PKG'`,
+  or `podman run --rm --user root -v /var/cache/apt-fedora:/var/cache/apt-fedora
+  --security-opt label=disable registry.fedoraproject.org/fedora:45 dnf repoquery
+  --setopt=system_cachedir=/var/cache/apt-fedora PKG`.
+- **Checks worth repeating** for any image: `tests/tests.sh` inside it (4 ok);
   `podman inspect` and process environments contain no `VNC_PASSWORD`;
-  `sudo -n true` is refused; noVNC answers on `http://127.0.0.1:<6080+N, Debian 6130+N>/vnc.html`
+  `sudo -n true` is refused; noVNC answers on `http://127.0.0.1:<6080+N, Debian 6130+N, …>/vnc.html`
   and `[::1]`; ending the session stops the container (`podman ps -a` shows
   Exited, log says "vncserver exited") and `podman start` brings it back.
 - **Clean up** what you started: `d_rm -f N` (= `podman rm -f -t 2 cc1u_1u`, retried
@@ -410,16 +452,20 @@ image has no apt lists. Everything below uses the nested podman.
 - **Not testable here**: the real host (NFS apt cache, host paths, other UIDs).
   Say so instead of guessing; the user tests on the host.
 
-## Adding a desktop stage (checklist)
-1. `<distro>/Containerfile`: `FROM chrome AS <name>`, `USER root`, one sorted apt `RUN`
-   with the standard tail, a `RUN` writing `/usr/local/bin/vnc-session`, then
-   `USER ${USERID}`; add the stage to the list in the header comment.
+## Adding a desktop (checklist)
+1. `<desktop>/Containerfile` (new directory, `ARG BASE=localhost/vnc-desktop-<distro>:browser`
+   and a header comment listing its stages, like `xfce/`), or a new stage in an existing
+   one: `FROM ${BASE} AS <distro>`, `USER root`, `ARG USERID USER_UID`, one sorted package
+   `RUN` with that distro's cache tail, a `RUN` writing `/usr/local/bin/vnc-session`,
+   then `USER ${USERID}`. An agent desktop is the same in `<agent>/Containerfile` on a
+   desktop (and the agent goes in `d_agents`, with a prefix in `d_name0s`, ports and
+   `d_descs`).
 2. Find out what works before writing it: is there an X11 session at all
    (GNOME Shell: no), does its session manager need systemd/logind (start
    the parts by hand if so, as in `gnome`)? Try it in a throwaway instance.
 3. Look at a screenshot of a **fresh home**. Ubuntu's default panel layouts
    often reference applets that `--no-install-recommends` leaves out (empty
-   panel, "Error" boxes, blank icons): fix with a gsettings override in
+   panel, "Error" boxes, blank icons; Fedora's without weak deps likewise): fix with a gsettings override in
    `/usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override` +
    `glib-compile-schemas --strict`, as in `gnome`/`mate`/`cinnamon`.
 4. **Screen lock must be impossible** (no password to unlock): test an explicit
@@ -430,9 +476,11 @@ image has no apt lists. Everything below uses the nested podman.
 6. A screenshot tool that can save to a file without a dialog (`scrot` if
    the desktop's own can't), and a branch for it in `tests/screenshot.sh`.
 7. `env.rc`: add to `d_targets_<distro>`, the `d_target` comment and `d_descs`.
-8. Docs: README (intro sentence, file table, Stages text and table, Screenshots
-   item, `d_all` list), this file (intro, Files, design decisions), and
-   `docs/<distro>/` (`d_distro=<distro> d_screenshots N <name>`, plus a section in `docs/README.md`).
+8. A new directory with a `COPY` source: a `!` line in `.containerignore` (a desktop's
+   `Containerfile` alone needs none: it's passed with `-f`).
+9. Docs: README (intro table, file table, Images table and Desktops text, `d_all` list),
+   this file (intro, Files, design decisions), and `docs/<distro>/`
+   (`d_distro=<distro> d_screenshots N <name>`, plus a section in `docs/README.md`).
 
 ## Gotchas met so far
 - **Open**: `d_run_opts`' `--network=pasta:-T,5201,--map-gw` (order fixed for podman 4.9)

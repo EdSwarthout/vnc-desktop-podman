@@ -5,6 +5,7 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser
 # picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser,
 # and tags the image vnc-desktop-<distro>:gnome. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + GNOME Flashback (gnome-panel, metacity, nautilus)
+#   debian - Debian 13 + GNOME Shell (its X11 session), Debian's default desktop
 # The Claude desktop app is an agent desktop on top of this (../claude: gnome-claude).
 
 # ---------------------------------------------------------------------------------------
@@ -56,6 +57,71 @@ RUN printf '%s\n' '#!/bin/sh' \
 RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-layout='gnome-flashback'" \
         '[org.gnome.gnome-flashback]' 'screensaver=false' \
         '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
+        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
+    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+
+USER ${USERID}
+
+# ---------------------------------------------------------------------------------------
+# Stage "debian": GNOME Shell's X11 session, Debian's default desktop
+FROM ${BASE} AS debian
+USER root
+
+ARG USERID
+ARG USER_UID
+
+# GNOME 48 still has an X11 session (Ubuntu 26.04's GNOME 50 doesn't; that stage is
+# Flashback). Without the recommends: no Firefox, Evolution, Software etc.
+# gnome-screenshot: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnome-screenshot \
+    gnome-session \
+    gnome-shell \
+    gnome-terminal \
+    nautilus \
+    && { mountpoint -q /var/cache/apt-debian || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# No systemd: gnome-session falls back to starting the session itself, but aborts without
+# a system bus, and there's no system dbus-daemon (it'd need root). So the session runs
+# its own stand-in, with no services on it (no logind, polkit, …: GNOME warns and goes
+# on), at $XDG_RUNTIME_DIR, which nothing else sets either.
+# --disable-acceleration-check: the check rejects software rendering (llvmpipe), which
+# is what the VNC X server has; GNOME Shell runs on it fine.
+# No screen locking: without GDM, GNOME Shell has no screen shield, so lock requests
+# (Super+L, org.gnome.ScreenSaver.Lock) find nothing to lock; the settings below turn
+# locking and idle blanking off as well.
+RUN printf '%s\n' '<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"' \
+        ' "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">' \
+        '<busconfig>' \
+        '  <type>system</type>' \
+        '  <auth>EXTERNAL</auth>' \
+        '  <listen>unix:tmpdir=/tmp</listen>' \
+        '  <policy context="default">' \
+        '    <allow send_destination="*" eavesdrop="true"/>' \
+        '    <allow eavesdrop="true"/>' \
+        '    <allow own="*"/>' \
+        '  </policy>' \
+        '</busconfig>' \
+        > /usr/local/share/vnc-system-bus.conf \
+    && printf '%s\n' '#!/bin/sh' \
+        'export XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)" XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=GNOME' \
+        'mkdir -p -m 700 "$XDG_RUNTIME_DIR"' \
+        'export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/system_bus_socket"' \
+        'dbus-daemon --fork --config-file=/usr/local/share/vnc-system-bus.conf --address="$DBUS_SYSTEM_BUS_ADDRESS"' \
+        'exec gnome-session --disable-acceleration-check' \
+        > /usr/local/bin/vnc-session
+
+# Dash favourites: Debian's are mostly apps that aren't installed (Firefox, Evolution,
+# Software, …), which leaves only Files. always-show-log-out: GNOME hides Log Out (the
+# way to end the session and stop the container) when there's only one local user.
+RUN printf '%s\n' \
+        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
+        '[org.gnome.desktop.screensaver]' 'lock-enabled=false' \
+        '[org.gnome.desktop.session]' 'idle-delay=uint32 0' \
+        '[org.gnome.shell]' 'always-show-log-out=true' \
+        "favorite-apps=['google-chrome.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Terminal.desktop']" \
         > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
     && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
 

@@ -1,26 +1,29 @@
-# OpenCode image (`d_distro=opencode`)
+# OpenCode agent desktop (`d_target=lxqt-opencode`)
 
 [OpenCode](https://opencode.ai/product), an open-source AI coding agent, as a desktop
-app and a terminal UI. It runs on Ubuntu's `lxqt` stage (LXQt, Google Chrome,
-TigerVNC/noVNC, nested podman, `install_claude`). One stage, `lxqt`, tagged
-`u2604opencode:lxqt`. It builds on amd64 and arm64: the desktop `.deb` URL follows
-the image's `dpkg --print-architecture`, and `install_opencode` installs a native
-arm64 CLI on arm64.
+app and a terminal UI, on LXQt (with Google Chrome, TigerVNC/noVNC, nested podman and
+the CLI installers). Stages `ubuntu` (the `.deb`) and `fedora` (the `.rpm`) of the
+[`Containerfile`](Containerfile) here, built on `vnc-desktop-<distro>:lxqt` and tagged
+`vnc-desktop-<distro>:lxqt-opencode`. It builds on amd64 and arm64: the desktop
+package's URL follows the image's architecture, and `install_opencode` installs a
+native arm64 CLI on arm64.
 
 ```bash
 source ./env.rc
-d_distro=opencode d_target=lxqt d_build              # builds u2604cc:lxqt first
-d_select 1; d_distro=opencode d_target=lxqt d_run    # instance oc1u
-d_distro=opencode d_vnc                              # VNC 7151 (needs vncviewer)
-d_distro=opencode d_novnc                            # or noVNC on 6331, in a browser
+d_target=lxqt-opencode d_build              # builds vnc-desktop-ubuntu:lxqt first
+d_select 1; d_target=lxqt-opencode d_run    # instance oc1u
+d_target=lxqt-opencode d_vnc                # VNC 7151 (needs vncviewer)
+d_target=lxqt-opencode d_novnc              # or noVNC on 6331, in a browser
+d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: oc1f, same ports
 ```
 
-Keep `d_target=lxqt` on the `d_run` line: a variable set for the `d_build` command
-doesn't stay set in your shell, and `xfce` (the default) isn't an OpenCode stage.
+Keep `d_target=lxqt-opencode` on each line (or set it in your shell or `.env`): the
+instance's name, home and ports follow it.
 
-| Distro   | Container name | Home                    | VNC    | noVNC  |
-|----------|----------------|-------------------------|--------|--------|
-| opencode | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N | 6330+N |
+| Distro | Container name | Home                    | VNC    | noVNC  |
+|--------|----------------|-------------------------|--------|--------|
+| ubuntu | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N | 6330+N |
+| fedora | `ocNf`         | `$d_dir/vnc-desktop-fedora-opencodeN` | 7150+N | 6330+N |
 
 Nested (from inside an instance) it is `<this instance>_ocNu`, so it can't clash with an
 Ubuntu child `<this instance>_Nu`.
@@ -53,8 +56,8 @@ Ubuntu child `<this instance>_Nu`.
 
 ## Updates
 
-The image's copy changes only when you rebuild: `d_distro=opencode d_build_fresh`, or
-`d_build --no-cache`. The desktop app's own updater can't install a `.deb` without
+The image's copy changes only when you rebuild: `d_target=lxqt-opencode d_build_fresh`,
+or `d_build --no-cache`. The desktop app's own updater can't install a package without
 root, so its update offers fail. `install_opencode` gives you a terminal UI that keeps
 itself up to date between rebuilds.
 

@@ -7,12 +7,13 @@ ARG BASE=localhost/vnc-desktop-ubuntu:lxqt
 # stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:<desktop>, and
 # tags the image vnc-desktop-<distro>:<desktop>-antigravity. The build context is the
 # repo root.
-#   ubuntu - Antigravity App (Electron tarball) and Python SDK
+#   ubuntu, fedora - Antigravity App (Electron tarball) and Python SDK: the same for both
+#            (no package manager involved), so both are the stage "app" under their name
 # See README.md here.
 
 # ---------------------------------------------------------------------------------------
-# Stage "ubuntu"
-FROM ${BASE} AS ubuntu
+# Stage "app", the same on every distro; the distros' stages, at the end, are this one
+FROM ${BASE} AS app
 USER root
 
 # d_build passes these to every Containerfile. The user itself comes with the base image
@@ -88,3 +89,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/opt/u
         "google-antigravity${ANTIGRAVITY_SDK_VERSION:+==${ANTIGRAVITY_SDK_VERSION}}" \
     && python3 -c 'from google.antigravity import Agent, LocalAgentConfig' \
     && rm -rf ~/.cache ~/.config/uv ~/.local/share/uv
+
+# ---------------------------------------------------------------------------------------
+# The distros' stages
+FROM app AS ubuntu
+FROM app AS fedora
