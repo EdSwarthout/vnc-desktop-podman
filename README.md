@@ -11,8 +11,9 @@ coding-agent CLIs. Distros and their desktops:
 | Fedora 45 | XFCE, LXQt |
 | Arch Linux | Openbox (with Chromium) |
 
-On top of a desktop there are agent desktops: [OpenCode](opencode/README.md),
-[Google Antigravity](antigravity/README.md) and the Claude desktop app, and there is
+On top of a desktop there are [agent desktops](#agent-desktops):
+[OpenCode](container/opencode/README.md), [Google Antigravity](container/antigravity/README.md)
+and the [Claude desktop app](container/claude/README.md), and there is
 an image for [Chrome automation](chrome/README.md). Smaller stages (headless, or VNC
 with just an xterm, with or without the browser) come from each distro's own
 `Containerfile`. Each instance keeps its home directory on the host, so settings,
@@ -25,14 +26,14 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `container/`    | What the images are built from (you normally don't touch it): |
 | `container/ubuntu/`, `debian/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (see [Images](#images)) |
 | `container/xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
-| `container/opencode/`, `antigravity/`, `claude/`, `chrome/` | Agent desktops: a `Containerfile` with one stage per distro, built on a desktop; `chrome/`: `devtools`, Ubuntu's `browser` + Chrome Canary and browser tools |
+| `container/opencode/`, `antigravity/`, `claude/` | [Agent desktops](#agent-desktops): a `Containerfile` with one stage per distro, built on a desktop, and a README |
+| `container/chrome/` | `devtools`: a `Containerfile`, Ubuntu's `browser` + Chrome Canary and browser tools |
 | `container/cli-installers/` | `install_claude`, `install_agy`, `install_opencode`, `install_grok`, `install_t3code`, in every `browser` stage (see [CLI installers](#cli-installers)) |
 | `container/start.sh` | Container entrypoint (all images): first-boot setup, starts the VNC session if the stage has one |
 | `container/vncserver-wrapper` | `/usr/local/bin/vncserver` in every `vnc` stage: runs the VNC X server and the session in the foreground |
 | `container/nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
 | `user_files/<distro>/` | Your files for new homes (not in git; see [below](#run-an-instance)) |
 | `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`), an example script and a [README](chrome/README.md) of the options |
-| `opencode/`, `antigravity/` | READMEs of the [OpenCode](opencode/README.md) and [Antigravity](antigravity/README.md) agent desktops |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
@@ -136,9 +137,9 @@ one is runnable with `d_run`. The versions are `d_versions` in `env.rc`.
 | `mate`    | MATE (mate-panel, marco, caja), `mate-terminal`, `scrot` | MATE | ubuntu |
 | `cinnamon` | Cinnamon (software-rendering session), Nemo, `gnome-terminal`, `scrot` | Cinnamon | ubuntu |
 | `openbox` | Openbox, a bare window manager, `scrot` | Openbox | archlinux |
-| `lxqt-opencode` | [OpenCode](opencode/README.md) Desktop and the `opencode` terminal UI | LXQt | ubuntu, fedora |
-| `lxqt-antigravity` | [Google Antigravity](antigravity/README.md) App and Python SDK | LXQt | ubuntu, fedora |
-| `gnome-claude` | the Claude desktop app (`claude-desktop`, beta) | GNOME Flashback | ubuntu |
+| `lxqt-opencode` | [OpenCode](container/opencode/README.md) Desktop and the `opencode` terminal UI | LXQt | ubuntu, fedora |
+| `lxqt-antigravity` | [Google Antigravity](container/antigravity/README.md) App and Python SDK | LXQt | ubuntu, fedora |
+| `gnome-claude` | the [Claude desktop app](container/claude/README.md) (`claude-desktop`, beta) | GNOME Flashback | ubuntu |
 | `devtools` | [Chrome automation](chrome/README.md): Chrome Canary, MCP servers, Puppeteer, Playwright, Lighthouse | Openbox + `xterm` | ubuntu |
 
 [`docs/`](docs/README.md) has a screenshot of each desktop as it first comes up. A
@@ -177,12 +178,29 @@ which ends the session and stops the container. There is no panel. A
 `~/.config/openbox/menu.xml` of your own replaces the image's menu; a
 `~/.config/openbox/autostart` runs in addition to the image's.
 
-`gnome-claude` adds the Claude desktop app (from Anthropic's apt repository; still
-in beta, so it's only built on Ubuntu's GNOME). It keeps its secrets in the GNOME
-keyring, so its launcher gives a new home a default keyring without a password:
-nothing asks for one at the app's first start. Secrets in it are not encrypted,
-only protected by the home's file permissions. A home that already has a default
-keyring keeps it.
+
+### Agent desktops
+
+An agent desktop is a desktop plus an AI agent's desktop app, built on that desktop's
+image (target `<desktop>-<agent>`). Each has its own instances and ports, so it can
+run beside the distro's plain desktops. Every image also has the
+[CLI installers](#cli-installers) for the agents' terminal tools.
+
+| Target | Adds | Desktop | Distros | VNC / noVNC (host) | README |
+|--------|------|---------|---------|--------------------|--------|
+| `lxqt-opencode` | OpenCode Desktop and the `opencode` terminal UI | LXQt | ubuntu, fedora | 7150+N / 6330+N | [container/opencode](container/opencode/README.md) |
+| `lxqt-antigravity` | Google Antigravity App and its Python SDK (`install_agy` for the `agy` CLI) | LXQt | ubuntu, fedora | 7200+N / 6380+N | [container/antigravity](container/antigravity/README.md) |
+| `gnome-claude` | the Claude desktop app (`claude-desktop`, beta) | GNOME Flashback | ubuntu | 7400+N / 6580+N | [container/claude](container/claude/README.md) |
+
+```bash
+d_target=lxqt-opencode d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first
+d_select 1; d_target=lxqt-opencode d_run        # vnc-desktop-ubuntu-lxqt-opencode-2604-7151
+d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's
+```
+
+They build on amd64 and arm64. `gnome-claude` is Ubuntu only, as the app is still in
+beta; it gives a new home a passwordless keyring for the app's secrets (not
+encrypted), see its README.
 
 ### Distros
 
@@ -478,11 +496,8 @@ for all of it and the other options.
 
 **Agent desktops:** `d_target=lxqt-opencode d_build`, then `d_select N;
 d_target=lxqt-opencode d_run` gives LXQt with OpenCode Desktop in the menu
-(Development) and `opencode` (the terminal UI) on the PATH (instances
-`vnc-desktop-ubuntu-lxqt-opencode-2604-<7150+N>`); see
-[opencode/README.md](opencode/README.md). `lxqt-antigravity` has the Antigravity App
-and its Python SDK ([antigravity/README.md](antigravity/README.md)), and
-`gnome-claude` the Claude desktop app. Add `d_distro=fedora` for Fedora's. They build on amd64 and arm64.
+(Development) and `opencode` (the terminal UI) on the PATH. The others are
+`lxqt-antigravity` and `gnome-claude`; see [Agent desktops](#agent-desktops).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

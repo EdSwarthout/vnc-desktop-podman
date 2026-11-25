@@ -73,7 +73,7 @@ Not a fresh home: an Antigravity instance on an arm64 machine (DGX Spark), seen 
 TigerVNC (taken before the instances were named after their images: `ag1u`), with the
 Antigravity App signed in, Chrome on antigravity.google, and a nested instance (started
 inside it with `d_run`) in its own TigerVNC
-window, running the App too. See [antigravity/README.md](../antigravity/README.md).
+window, running the App too. See [container/antigravity/README.md](../container/antigravity/README.md).
 ![lxqt-antigravity on arm64: the Antigravity App in an instance and in a nested one](antigravity/lxqt-nested.png)
 
 ## Retaking them

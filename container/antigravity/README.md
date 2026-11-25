@@ -3,13 +3,13 @@
 [Google Antigravity](https://antigravity.google), Google's agentic coding platform: the
 desktop App, its Python SDK, and an installer for its CLI (`agy`), on LXQt (with
 Google Chrome, TigerVNC/noVNC, nested podman and the CLI installers). The
-[`container/antigravity/Containerfile`](../container/antigravity/Containerfile) has the same stage for Ubuntu and Fedora (no
+[`Containerfile`](Containerfile) here has the same stage for Ubuntu and Fedora (no
 package manager involved), built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
 `vnc-desktop-<distro>:lxqt-antigravity-<version>`. It builds on amd64 and arm64: Google
 publishes the App, the CLI and the SDK's wheels for both, and it runs on an arm64 DGX
 Spark as well as on amd64.
 
-![The Antigravity App in an instance on arm64, and in a nested instance inside it](../docs/antigravity/lxqt-nested.png)
+![The Antigravity App in an instance on arm64, and in a nested instance inside it](../../docs/antigravity/lxqt-nested.png)
 
 ```bash
 source ./env.rc

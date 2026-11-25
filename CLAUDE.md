@@ -11,8 +11,10 @@ coding-agent CLI installers (Claude Code and others) and nested podman, in three
   `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-claude` (Ubuntu);
 plus `devtools` (`container/chrome/`, Chrome automation on Ubuntu's `browser`).
 Images are `vnc-desktop-<distro>:<target>-<version>`. Everything the images are built
-from is under `container/`; the top level has what the user works with (`env.rc`,
-`.env`, docs, `tests/`, `user_files/`, the `chrome/` helpers and the READMEs). See `README.md` for user-facing setup.
+from is under `container/`, with each agent desktop's README beside its Containerfile;
+the top level has what the user works with (`env.rc`, `.env`, `README.md`, `docs/`,
+`tests/`, `user_files/`, the `chrome/` helpers). See `README.md` for user-facing setup;
+its "Agent desktops" section has a table of them.
 
 ## Files
 Under `container/` (paths below without that prefix are relative to it, unless
@@ -34,7 +36,8 @@ they say otherwise):
   each the desktop's package `RUN` (with the distro's cache tail), a `RUN` writing
   `/usr/local/bin/vnc-session`, and its tweaks. `gnome/` has two different stages
   (`ubuntu`: Flashback, `debian`: Shell).
-- `opencode/`, `antigravity/`, `claude/` — agent desktops, same pattern on a desktop.
+- `opencode/`, `antigravity/`, `claude/` — agent desktops, same pattern on a desktop, each
+  with a `README.md` (keep the main README's agent desktop table in step).
   `opencode`: OpenCode Desktop (Electron `.deb` / `.rpm` from opencode.ai's "latest" URL,
   not GitHub's; arch `dpkg --print-architecture` for the `.deb`, `uname -m` for the
   `.rpm`; installs to `/opt/OpenCode`; `/usr/local/bin/ai.opencode` wrapper with
@@ -50,7 +53,7 @@ they say otherwise):
   --password-store=basic`; our own `antigravity.desktop`; Python SDK `google-antigravity`
   in a user-owned `/opt/venv` with uv in `/opt/uv`, as in `chrome/`), and `ubuntu` and
   `fedora` are `FROM app`. `antigravity/README.md`.
-  `claude`: stage `ubuntu` on `gnome` (see "`claude-desktop`" below).
+  `claude`: stage `ubuntu` on `gnome` (see "`claude-desktop`" below). `claude/README.md`.
 - `cli-installers/` — `install_claude`, `install_agy` (Google's `install.sh` →
   `~/.local/bin/agy`), `install_opencode` (opencode's build in `~/.opencode/bin`, first on
   PATH via `.bashrc`), `install_grok` (xAI's `https://x.ai/cli/install.sh` → `~/.grok/bin`,
@@ -490,6 +493,8 @@ image has no package lists. Everything below uses the nested podman.
 9. Docs: README (intro table, file table, Images table and Desktops text, `d_all` list),
    this file (intro, Files, design decisions), and `docs/<distro>/`
    (`d_distro=<distro> d_screenshots N <name>`, plus a section in `docs/README.md`).
+   An agent desktop also gets `container/<agent>/README.md` and a row in the README's
+   "Agent desktops" table.
 
 ## Gotchas met so far
 - **Open**: `d_run_opts`' `--network=pasta:-T,5201,--map-gw` (order fixed for podman 4.9)

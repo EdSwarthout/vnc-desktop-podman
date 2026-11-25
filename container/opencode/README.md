@@ -3,7 +3,7 @@
 [OpenCode](https://opencode.ai/product), an open-source AI coding agent, as a desktop
 app and a terminal UI, on LXQt (with Google Chrome, TigerVNC/noVNC, nested podman and
 the CLI installers). Stages `ubuntu` (the `.deb`) and `fedora` (the `.rpm`) of the
-[`container/opencode/Containerfile`](../container/opencode/Containerfile), built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
+[`Containerfile`](Containerfile) here, built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
 `vnc-desktop-<distro>:lxqt-opencode-<version>`. It builds on amd64 and arm64: the desktop
 package's URL follows the image's architecture, and `install_opencode` installs a
 native arm64 CLI on arm64.
