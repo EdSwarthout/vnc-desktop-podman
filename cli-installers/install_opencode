@@ -1,0 +1,7 @@
+#!/bin/bash
+# install_opencode: opencode's own build of its CLI/TUI, run as the user: ~/.opencode/bin
+# (home volume), which updates itself; the installer puts that dir first on PATH in
+# ~/.bashrc, so it wins from the next shell on. Arguments go to the installer (e.g.
+# --version X, --no-modify-path).
+set -ex
+curl -fsSL https://opencode.ai/v2/install | bash -s -- "$@"

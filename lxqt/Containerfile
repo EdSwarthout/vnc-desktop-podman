@@ -1,0 +1,49 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser
+
+# LXQt desktop (d_target=lxqt), on a distro's browser stage (Chrome, the CLI installers,
+# TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build picks the
+# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags
+# the image vnc-desktop-<distro>:lxqt. The build context is the repo root.
+#   ubuntu - Ubuntu 26.04 + LXQt
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# Not pulled in without recommends: breeze-icon-theme (LXQt's default icon theme; else
+# the panel and desktop have no icons), libxcb-cursor0 (Qt 6's xcb platform plugin won't
+# load without it, so no LXQt app starts), lxqt-menu-data (the application menu; the
+# panel's menu button is missing without it), openbox (a window manager),
+# qt6-svg-plugins (SVG icons, e.g. the menu button's start-here-lxqt).
+# featherpad: a GUI text editor (LXQt's)
+# screengrab: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    breeze-icon-theme \
+    featherpad \
+    libxcb-cursor0 \
+    lxqt-core \
+    lxqt-menu-data \
+    openbox \
+    qt6-svg-plugins \
+    qterminal \
+    screengrab \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Panel without the volume plugin: there's no sound device in the container, so it only
+# shows a red X. /etc/xdg comes before /usr/share in LXQt's XDG_CONFIG_DIRS, and homes'
+# panel.conf don't store the plugin list, so this applies to existing homes too. The
+# grep fails the build if a new lxqt-panel changes the default list.
+RUN printf '#!/bin/sh\nexec startlxqt\n' > /usr/local/bin/vnc-session \
+    && grep -q '^plugins=.*,volume,' /usr/share/lxqt/panel.conf \
+    && mkdir -p /etc/xdg/lxqt \
+    && sed '/^plugins=/s/,volume,/,/' /usr/share/lxqt/panel.conf > /etc/xdg/lxqt/panel.conf
+
+USER ${USERID}

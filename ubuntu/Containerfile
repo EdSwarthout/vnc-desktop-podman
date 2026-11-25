@@ -1,19 +1,16 @@
 ARG BASE=docker.io/library/ubuntu:26.04
 
-# Ubuntu 26.04 (d_distro=ubuntu, the default). ../debian/Containerfile follows the base,
-# vnc and chrome stages: keep them in step. The build context is the repo root (the
-# shared start.sh, nested-subids).
+# Ubuntu 26.04 (d_distro=ubuntu, the default). The other distros' Containerfiles follow
+# these stages: keep them in step. The build context is the repo root (the shared
+# start.sh, nested-subids, vncserver-wrapper, cli-installers/).
 # Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
-# u2604cc:<stage>):
-#   base   - Ubuntu + network/debug tools + nested rootless podman; headless
-#   vnc    - base + TigerVNC/noVNC, session is a bare xterm
-#   chrome - vnc + Google Chrome (via the --no-sandbox wrapper)
-#   xfce   - chrome + XFCE desktop
-#   lxqt   - chrome + LXQt desktop
-#   gnome  - chrome + GNOME Flashback desktop + claude-desktop
-#   kde    - chrome + KDE Plasma desktop
-#   mate   - chrome + MATE desktop
-#   cinnamon - chrome + Cinnamon desktop
+# vnc-desktop-ubuntu:<stage>):
+#   base    - Ubuntu + network/debug tools + nested rootless podman; headless
+#   vnc     - base + TigerVNC/noVNC, session is a bare xterm
+#   browser - vnc + Google Chrome (via the --no-sandbox wrapper) + the CLI installers
+# Desktops are built on browser from their own directories (../xfce, ../lxqt, …: stage
+# "ubuntu" there, tagged vnc-desktop-ubuntu:<desktop>), and agent desktops on a desktop
+# (../opencode, …: vnc-desktop-ubuntu:<desktop>-<agent>).
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -151,12 +148,6 @@ RUN mkdir -p /etc/containers/containers.conf.d && printf '%s\n' \
 
 COPY --chmod=755 nested-subids /usr/local/sbin/nested-subids
 
-# Claude Code: run install_claude as the user at runtime. The native installer puts it in
-# ~/.local/bin (home volume), so it persists and self-updates.
-RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://claude.ai/install.sh | bash\n' \
-    > /usr/local/bin/install_claude \
-    && chmod +x /usr/local/bin/install_claude
-
 # start.sh: first-boot home setup and nested-subids; then the VNC session if the stage
 # has one, otherwise it just waits (use `podman exec -it <name> bash`).
 COPY --chmod=755 start.sh /usr/local/bin/start.sh
@@ -201,6 +192,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
+# vncserver: the shared front end (../vncserver-wrapper) that runs Xtigervnc and the
+# session in the foreground, the same in every distro; it shadows the package's perl
+# /usr/bin/vncserver on PATH.
+COPY --chmod=755 vncserver-wrapper /usr/local/bin/vncserver
+
 # The session: closing it (exit the xterm, or log out of a desktop) stops the container.
 RUN printf '#!/bin/sh\nexec xterm\n' > /usr/local/bin/vnc-session \
     && chmod +x /usr/local/bin/vnc-session
@@ -209,8 +205,8 @@ USER ${USERID}
 EXPOSE 5901 6080
 
 # ---------------------------------------------------------------------------------------
-# Stage "chrome": vnc + Google Chrome
-FROM vnc AS chrome
+# Stage "browser": vnc + Google Chrome + the CLI installers
+FROM vnc AS browser
 USER root
 
 # Fonts for web pages: metric-compatible Latin, CJK (else Chinese/Japanese/Korean text
@@ -225,7 +221,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Google Chrome for the image's architecture (amd64 or arm64; dpkg reports the image's,
 # also in a cross build under emulation). The .deb's postinst adds Google's apt repo + key
-# itself (chrome/Containerfile installs google-chrome-canary from it).
+# itself (../chrome/Containerfile installs google-chrome-canary from it).
 RUN curl -fsSLo /tmp/chrome.deb \
         "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb" \
     && apt-get update && apt-get install -y /tmp/chrome.deb \
@@ -252,233 +248,10 @@ RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome-stable --no-sandbox --no-firs
            || { echo "$f.desktop: Exec= not pointed at the wrapper" >&2; exit 1; }; \
        done
 
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "xfce": chrome + XFCE desktop
-FROM chrome AS xfce
-USER root
-
-# xfce4-screenshooter: tests/screenshot.sh uses it
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    xfce4 \
-    xfce4-screenshooter \
-    xfce4-terminal \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-RUN printf '#!/bin/sh\nexec startxfce4\n' > /usr/local/bin/vnc-session
-
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "lxqt": chrome + LXQt desktop
-FROM chrome AS lxqt
-USER root
-
-# Not pulled in without recommends: breeze-icon-theme (LXQt's default icon theme; else
-# the panel and desktop have no icons), libxcb-cursor0 (Qt 6's xcb platform plugin won't
-# load without it, so no LXQt app starts), lxqt-menu-data (the application menu; the
-# panel's menu button is missing without it), openbox (a window manager),
-# qt6-svg-plugins (SVG icons, e.g. the menu button's start-here-lxqt).
-# featherpad: a GUI text editor (LXQt's)
-# screengrab: tests/screenshot.sh
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    breeze-icon-theme \
-    featherpad \
-    libxcb-cursor0 \
-    lxqt-core \
-    lxqt-menu-data \
-    openbox \
-    qt6-svg-plugins \
-    qterminal \
-    screengrab \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# Panel without the volume plugin: there's no sound device in the container, so it only
-# shows a red X. /etc/xdg comes before /usr/share in LXQt's XDG_CONFIG_DIRS, and homes'
-# panel.conf don't store the plugin list, so this applies to existing homes too. The
-# grep fails the build if a new lxqt-panel changes the default list.
-RUN printf '#!/bin/sh\nexec startlxqt\n' > /usr/local/bin/vnc-session \
-    && grep -q '^plugins=.*,volume,' /usr/share/lxqt/panel.conf \
-    && mkdir -p /etc/xdg/lxqt \
-    && sed '/^plugins=/s/,volume,/,/' /usr/share/lxqt/panel.conf > /etc/xdg/lxqt/panel.conf
-
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "gnome": chrome + GNOME Flashback desktop (gnome-panel, metacity, nautilus)
-FROM chrome AS gnome
-USER root
-
-# GNOME Flashback, GNOME's X11 session, not GNOME Shell: Ubuntu 26.04's GNOME Shell (50)
-# is Wayland-only and needs logind, so it can't be a session on the VNC X server.
-# gnome-session-flashback: the panel layout and Flashback's gsettings defaults (and
-# gnome-flashback, gnome-panel, metacity, nautilus as dependencies).
-# gnome-screenshot: tests/screenshot.sh
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gnome-screenshot \
-    gnome-session-flashback \
-    gnome-terminal \
-    seahorse \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# gnome-session needs systemd to start a session, so start Flashback's parts directly:
-# the window manager, gnome-flashback (desktop background and icons, shortcuts,
-# notifications) and the panel; the session lasts as long as the panel. The variables
-# select Flashback's gsettings defaults and its applications menu.
-# The panel's "Log Out" needs gnome-session, so it does nothing here: the menu's
-# "Log Out (stop the container)" entry ends the session by closing the panel instead.
-# Keyring: claude-desktop stores its secrets in the default keyring (gnome-keyring,
-# D-Bus activated). A new home has none, so gnome-keyring would ask for a password to
-# create one, and claude-desktop hangs after that dialog. So the session gives a home
-# without a default keyring a passwordless one (a plain-text keyring file): it unlocks
-# without a prompt, and nothing asks for a password the user doesn't have. Secrets in it
-# are not encrypted: they're protected only by the home's file permissions.
-RUN printf '%s\n' '#!/bin/sh' \
-        'export XDG_CURRENT_DESKTOP=GNOME-Flashback:GNOME XDG_MENU_PREFIX=gnome-flashback- XDG_SESSION_TYPE=x11' \
-        'd=$HOME/.local/share/keyrings' \
-        'if [ ! -e "$d/default" ]; then (' \
-        '    umask 077; mkdir -p "$d"' \
-        '    [ -e "$d/Default_keyring.keyring" ] || printf "%s\n" "[keyring]" "display-name=Default keyring" \' \
-        '        "ctime=0" "mtime=0" "lock-on-idle=false" "lock-after=false" > "$d/Default_keyring.keyring"' \
-        '    printf Default_keyring > "$d/default"' \
-        ') fi' \
-        'metacity &' \
-        'gnome-flashback &' \
-        'exec gnome-panel' \
-        > /usr/local/bin/vnc-session \
-    && printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Log Out (stop the container)' \
-        'Exec=pkill -x gnome-panel' 'Icon=system-log-out' 'Categories=System;' \
-        > /usr/share/applications/vnc-logout.desktop
-
-# Panel layout: Ubuntu's default ("ubuntu") has an indicator applet that isn't
-# installed, which leaves the top panel without clock or user menu; use GNOME
-# Flashback's own layout. Only read when a home's panel is first set up.
-# No screen locking: the user has no password, so a locked screen couldn't be unlocked,
-# and by default it locks after 5 idle minutes. gnome-flashback's screensaver component
-# is the locker, so it's switched off.
-RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-layout='gnome-flashback'" \
-        '[org.gnome.gnome-flashback]' 'screensaver=false' \
-        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
-        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
-    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
-
-# Claude desktop app, from Anthropic's apt repository. The key and the sources file go
-# where the package's own postinst puts them, so it doesn't add a second entry.
-# gnome-keyring: where claude-desktop stores its secrets (see vnc-session above)
-RUN curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc \
-        https://downloads.claude.ai/keys/claude-code.asc \
-    && echo 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
-        > /etc/apt/sources.list.d/claude-desktop.list \
-    && apt-get update && apt-get install -y claude-desktop gnome-keyring \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "kde": chrome + KDE Plasma desktop (X11 session)
-FROM chrome AS kde
-USER root
-
-# plasma-session-x11 + kwin-x11: Plasma's X11 session (the default one is Wayland).
-# kde-spectacle: tests/screenshot.sh
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    dolphin \
-    kde-spectacle \
-    konsole \
-    kwin-x11 \
-    plasma-desktop \
-    plasma-session-x11 \
-    systemsettings \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# No screen locking, automatic or by hand (kiosk restriction): the user has no password,
-# so a locked screen couldn't be unlocked.
-# The update script (run once per home by plasmashell) sets the task bar's pinned
-# launchers: the default ones include Discover, which isn't installed (a blank icon).
-RUN printf '%s\n' '#!/bin/sh' 'exec startplasma-x11' \
-        > /usr/local/bin/vnc-session \
-    && printf '%s\n' '[Daemon]' 'Autolock=false' 'LockOnResume=false' > /etc/xdg/kscreenlockerrc \
-    && printf '%s\n' '[KDE Action Restrictions][$i]' 'action/lock_screen=false' > /etc/xdg/kdeglobals \
-    && d=/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates && test -d $d \
-    && printf '%s\n' \
-        'for (const panel of panels()) {' \
-        '    for (const id of panel.widgetIds) {' \
-        '        const w = panel.widgetById(id);' \
-        '        if (w.type !== "org.kde.plasma.icontasks") continue;' \
-        '        w.currentConfigGroup = ["General"];' \
-        '        w.writeConfig("launchers", ["applications:systemsettings.desktop", "preferred://filemanager", "preferred://browser", "applications:org.kde.konsole.desktop"]);' \
-        '    }' \
-        '}' \
-        > $d/vnc-desktop-launchers.js
-
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "mate": chrome + MATE desktop
-FROM chrome AS mate
-USER root
-
-# scrot: tests/screenshot.sh (MATE's own mate-screenshot can only save through a dialog)
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    mate-desktop-environment-core \
-    mate-terminal \
-    scrot \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# Panel layout: Ubuntu's default ("familiar") uses applets that aren't installed (they
-# show as "Error" boxes, and the top panel stays empty); use MATE's own default. Only
-# read when a home's panel is first set up.
-RUN printf '#!/bin/sh\nexec mate-session\n' > /usr/local/bin/vnc-session \
-    && printf '%s\n' '[org.mate.panel]' "default-layout='default'" \
-        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
-    && glib-compile-schemas /usr/share/glib-2.0/schemas
-
-USER ${USERID}
-
-# ---------------------------------------------------------------------------------------
-# Stage "cinnamon": chrome + Cinnamon desktop
-FROM chrome AS cinnamon
-USER root
-
-# scrot: tests/screenshot.sh
-# keep list sorted
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cinnamon-core \
-    gnome-terminal \
-    scrot \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
-
-# cinnamon2d: Cinnamon's software-rendering session (there's no GPU behind the VNC X
-# server).
-# No screen locking: the user has no password, so a locked screen couldn't be unlocked.
-# The settings turn off idle activation and hide the menu's Lock Screen, but an explicit
-# lock request still locks, so the screensaver isn't run at all: it's taken out of the
-# session's components and its D-Bus activation file is removed (the greps fail the
-# build if a new Cinnamon moves these).
-RUN printf '#!/bin/sh\nexec cinnamon-session-cinnamon2d\n' > /usr/local/bin/vnc-session \
-    && f=/usr/share/cinnamon-session/sessions/cinnamon2d.session \
-    && grep -q '^RequiredComponents=.*;org.cinnamon.ScreenSaver;' $f \
-    && sed -i '/^RequiredComponents=/s/;org.cinnamon.ScreenSaver;/;/' $f \
-    && grep -q '^Exec=/usr/bin/cinnamon-screensaver$' /usr/share/dbus-1/services/org.cinnamon.ScreenSaver.service \
-    && rm /usr/share/dbus-1/services/org.cinnamon.ScreenSaver.service \
-    && printf '%s\n' \
-        '[org.cinnamon.desktop.lockdown]' 'disable-lock-screen=true' \
-        '[org.cinnamon.desktop.screensaver]' 'lock-enabled=false' \
-        '[org.cinnamon.desktop.session]' 'idle-delay=uint32 0' \
-        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
-    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+# CLI installers, run as the user at runtime (the home is a volume): install_claude
+# (Claude Code), install_agy (Antigravity CLI), install_opencode, install_grok,
+# install_t3code. Each runs its vendor's installer into the home, where the tool
+# persists and updates itself; see the scripts in ../cli-installers.
+COPY --chmod=755 cli-installers/ /usr/local/bin/
 
 USER ${USERID}

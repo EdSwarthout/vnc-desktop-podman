@@ -1,0 +1,62 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser
+
+# GNOME desktop (d_target=gnome), on a distro's browser stage (Chrome, the CLI
+# installers, TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build
+# picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser,
+# and tags the image vnc-desktop-<distro>:gnome. The build context is the repo root.
+#   ubuntu - Ubuntu 26.04 + GNOME Flashback (gnome-panel, metacity, nautilus)
+# The Claude desktop app is an agent desktop on top of this (../claude: gnome-claude).
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu": GNOME Flashback
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# GNOME Flashback, GNOME's X11 session, not GNOME Shell: Ubuntu 26.04's GNOME Shell (50)
+# is Wayland-only and needs logind, so it can't be a session on the VNC X server.
+# gnome-session-flashback: the panel layout and Flashback's gsettings defaults (and
+# gnome-flashback, gnome-panel, metacity, nautilus as dependencies).
+# gnome-screenshot: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnome-screenshot \
+    gnome-session-flashback \
+    gnome-terminal \
+    seahorse \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# gnome-session needs systemd to start a session, so start Flashback's parts directly:
+# the window manager, gnome-flashback (desktop background and icons, shortcuts,
+# notifications) and the panel; the session lasts as long as the panel. The variables
+# select Flashback's gsettings defaults and its applications menu.
+# The panel's "Log Out" needs gnome-session, so it does nothing here: the menu's
+# "Log Out (stop the container)" entry ends the session by closing the panel instead.
+RUN printf '%s\n' '#!/bin/sh' \
+        'export XDG_CURRENT_DESKTOP=GNOME-Flashback:GNOME XDG_MENU_PREFIX=gnome-flashback- XDG_SESSION_TYPE=x11' \
+        'metacity &' \
+        'gnome-flashback &' \
+        'exec gnome-panel' \
+        > /usr/local/bin/vnc-session \
+    && printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Log Out (stop the container)' \
+        'Exec=pkill -x gnome-panel' 'Icon=system-log-out' 'Categories=System;' \
+        > /usr/share/applications/vnc-logout.desktop
+
+# Panel layout: Ubuntu's default ("ubuntu") has an indicator applet that isn't
+# installed, which leaves the top panel without clock or user menu; use GNOME
+# Flashback's own layout. Only read when a home's panel is first set up.
+# No screen locking: the user has no password, so a locked screen couldn't be unlocked,
+# and by default it locks after 5 idle minutes. gnome-flashback's screensaver component
+# is the locker, so it's switched off.
+RUN printf '%s\n' '[org.gnome.gnome-panel.general:GNOME-Flashback]' "default-layout='gnome-flashback'" \
+        '[org.gnome.gnome-flashback]' 'screensaver=false' \
+        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
+        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
+    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+
+USER ${USERID}

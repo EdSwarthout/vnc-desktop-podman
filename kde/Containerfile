@@ -1,0 +1,54 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser
+
+# KDE Plasma desktop, X11 session (d_target=kde), on a distro's browser stage (Chrome,
+# the CLI installers, TigerVNC/noVNC, nested podman). One stage per distro that has it;
+# d_build picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:browser, and tags the image
+# vnc-desktop-<distro>:kde. The build context is the repo root.
+#   ubuntu - Ubuntu 26.04 + KDE Plasma (X11)
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# plasma-session-x11 + kwin-x11: Plasma's X11 session (the default one is Wayland).
+# kde-spectacle: tests/screenshot.sh
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dolphin \
+    kde-spectacle \
+    konsole \
+    kwin-x11 \
+    plasma-desktop \
+    plasma-session-x11 \
+    systemsettings \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# No screen locking, automatic or by hand (kiosk restriction): the user has no password,
+# so a locked screen couldn't be unlocked.
+# The update script (run once per home by plasmashell) sets the task bar's pinned
+# launchers: the default ones include Discover, which isn't installed (a blank icon).
+RUN printf '%s\n' '#!/bin/sh' 'exec startplasma-x11' \
+        > /usr/local/bin/vnc-session \
+    && printf '%s\n' '[Daemon]' 'Autolock=false' 'LockOnResume=false' > /etc/xdg/kscreenlockerrc \
+    && printf '%s\n' '[KDE Action Restrictions][$i]' 'action/lock_screen=false' > /etc/xdg/kdeglobals \
+    && d=/usr/share/plasma/shells/org.kde.plasma.desktop/contents/updates && test -d $d \
+    && printf '%s\n' \
+        'for (const panel of panels()) {' \
+        '    for (const id of panel.widgetIds) {' \
+        '        const w = panel.widgetById(id);' \
+        '        if (w.type !== "org.kde.plasma.icontasks") continue;' \
+        '        w.currentConfigGroup = ["General"];' \
+        '        w.writeConfig("launchers", ["applications:systemsettings.desktop", "preferred://filemanager", "preferred://browser", "applications:org.kde.konsole.desktop"]);' \
+        '    }' \
+        '}' \
+        > $d/vnc-desktop-launchers.js
+
+USER ${USERID}

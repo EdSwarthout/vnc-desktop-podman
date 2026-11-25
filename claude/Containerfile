@@ -1,0 +1,56 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:gnome
+
+# Claude desktop app (agent desktop "claude", d_target=<desktop>-claude, e.g.
+# gnome-claude), on a distro's desktop stage. One stage per distro that has it; d_build
+# picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:<desktop>,
+# and tags the image vnc-desktop-<distro>:<desktop>-claude. The build context is the
+# repo root. claude-desktop is still in beta.
+#   ubuntu - claude-desktop from Anthropic's apt repository, with gnome-keyring
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+
+# Claude desktop app, from Anthropic's apt repository. The key and the sources file go
+# where the package's own postinst puts them, so it doesn't add a second entry. With
+# recommends, unlike the desktops' package lists.
+# gnome-keyring: where claude-desktop stores its secrets (see the wrapper below)
+RUN curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+        https://downloads.claude.ai/keys/claude-code.asc \
+    && echo 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
+        > /etc/apt/sources.list.d/claude-desktop.list \
+    && apt-get update && apt-get install -y claude-desktop gnome-keyring \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+# Keyring: claude-desktop stores its secrets in the default keyring (gnome-keyring, D-Bus
+# activated). A new home has none, so gnome-keyring would ask for a password to create
+# one, and claude-desktop hangs after that dialog. So a wrapper (ahead of /usr/bin on
+# PATH, which is how the menu entry finds it too: its Exec= lines are a bare
+# claude-desktop, and the build fails if one isn't) gives a home without a default keyring a passwordless
+# one (a plain-text keyring file) before starting the app: it unlocks without a prompt,
+# and nothing asks for a password the user doesn't have. Secrets in it are not
+# encrypted: they're protected only by the home's file permissions.
+# (`gnome-keyring-daemon --unlock` with an empty password does not create a keyring.)
+RUN printf '%s\n' '#!/bin/sh' \
+        'd=$HOME/.local/share/keyrings' \
+        'if [ ! -e "$d/default" ]; then (' \
+        '    umask 077; mkdir -p "$d"' \
+        '    [ -e "$d/Default_keyring.keyring" ] || printf "%s\n" "[keyring]" "display-name=Default keyring" \' \
+        '        "ctime=0" "mtime=0" "lock-on-idle=false" "lock-after=false" > "$d/Default_keyring.keyring"' \
+        '    printf Default_keyring > "$d/default"' \
+        ') fi' \
+        'exec /usr/bin/claude-desktop "$@"' \
+        > /usr/local/bin/claude-desktop \
+    && chmod +x /usr/local/bin/claude-desktop \
+    && test -x /usr/bin/claude-desktop \
+    && f=/usr/share/applications/com.anthropic.Claude.desktop \
+    && ! grep '^Exec=' $f | grep -v '^Exec=claude-desktop '
+
+USER ${USERID}

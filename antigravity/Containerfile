@@ -1,16 +1,18 @@
-ARG BASE=localhost/u2604cc:lxqt
+ARG BASE=localhost/vnc-desktop-ubuntu:lxqt
 
-# Google Antigravity (d_distro=antigravity, https://antigravity.google): Ubuntu's lxqt
-# stage (../ubuntu/Containerfile: LXQt, Google Chrome, TigerVNC/noVNC, nested podman)
-# plus the Antigravity desktop app, its Python SDK and an installer for its CLI. The
-# base is that locally built image, so d_build builds it first. The build context is
-# the repo root. One stage, tagged u2604antigravity:lxqt:
-#   lxqt - lxqt + Antigravity App (Electron), Python SDK, install_agy; session is LXQt
+# Google Antigravity (agent desktop "antigravity", d_target=<desktop>-antigravity, e.g.
+# lxqt-antigravity; https://antigravity.google), on a distro's desktop stage (Chrome,
+# the CLI installers incl. install_agy, TigerVNC/noVNC, nested podman): the Antigravity
+# desktop app and its Python SDK. One stage per distro that has it; d_build picks the
+# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:<desktop>, and
+# tags the image vnc-desktop-<distro>:<desktop>-antigravity. The build context is the
+# repo root.
+#   ubuntu - Antigravity App (Electron tarball) and Python SDK
 # See README.md here.
 
 # ---------------------------------------------------------------------------------------
-# Stage "lxqt": Ubuntu's lxqt + Antigravity
-FROM ${BASE} AS lxqt
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
 USER root
 
 # d_build passes these to every Containerfile. The user itself comes with the base image
@@ -22,7 +24,8 @@ ARG USER_UID
 # service's /releases lists versions newest first with the build ("execution") id that
 # is part of the download URL; ANTIGRAVITY_VERSION picks one (empty: the newest), and
 # ANTIGRAVITY_TGZ overrides the whole URL. Builds for amd64 (linux-x64) and arm64
-# (linux-arm), after dpkg's architecture (the image's, also in a cross build). No
+# (linux-arm), after uname -m (the image's, also in a cross build under emulation;
+# unlike dpkg, the same in every distro). No
 # checksum is published. The top directory (Antigravity-x64/…) is stripped.
 # There's no .deb, so no dependencies come with it: Chrome's cover Electron's; the
 # build fails if a library is missing.
@@ -32,10 +35,10 @@ ARG ANTIGRAVITY_TGZ=
 RUN set -e; \
     url="$ANTIGRAVITY_TGZ"; \
     if [ -z "$url" ]; then \
-        case "$(dpkg --print-architecture)" in \
-            amd64) plat=linux-x64 ;; \
-            arm64) plat=linux-arm ;; \
-            *) echo "Antigravity: no build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+        case "$(uname -m)" in \
+            x86_64) plat=linux-x64 ;; \
+            aarch64) plat=linux-arm ;; \
+            *) echo "Antigravity: no build for $(uname -m)" >&2; exit 1 ;; \
         esac; \
         rel=$(curl -fsSL https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases \
               | jq -er --arg v "$ANTIGRAVITY_VERSION" \
@@ -63,13 +66,6 @@ RUN printf '#!/bin/sh\nexec /opt/Antigravity/antigravity --no-sandbox --password
         'Exec=/usr/local/bin/antigravity %U' 'Icon=applications-development' \
         'Terminal=false' 'Categories=Development;' 'StartupWMClass=Antigravity' \
         > /usr/share/applications/antigravity.desktop
-
-# Antigravity CLI (agy): run install_agy as the user at runtime, like install_claude.
-# Google's installer puts it in ~/.local/bin (home volume, on PATH), where it persists
-# and updates itself. Arguments go to the installer (e.g. --dir PATH).
-RUN printf '#!/bin/bash\nset -ex\ncurl -fsSL https://antigravity.google/cli/install.sh | bash -s -- "$@"\n' \
-        > /usr/local/bin/install_agy \
-    && chmod +x /usr/local/bin/install_agy
 
 # Antigravity SDK for Python (google-antigravity from PyPI; its wheels carry the
 # compiled runtime, google/antigravity/bin/localharness, so the GitHub repo alone isn't

@@ -1,0 +1,7 @@
+#!/bin/bash
+# install_agy: the Google Antigravity CLI (agy), run as the user. Google's installer puts
+# it in ~/.local/bin (home volume, on PATH), where it persists and updates itself. The
+# CLI has no code to download the Antigravity App (that's the antigravity agent image).
+# Arguments go to the installer (e.g. --dir PATH).
+set -ex
+curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- "$@"
