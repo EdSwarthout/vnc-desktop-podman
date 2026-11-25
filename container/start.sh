@@ -21,7 +21,7 @@ export SHELL=${SHELL:-/bin/bash}
 
 # New home: seed dotfiles from /etc/skel (the volume mount hides what useradd copied)
 # and put ~/.local/bin (native Claude install) on PATH for non-login shells too. Last,
-# the image's <distro>/user_files (see the Containerfiles' base stage), only here, on
+# the image's user_files/<distro> (see the Containerfiles' base stage), only here, on
 # first boot: they replace what's there (e.g. a .bashrc of your own), but the home
 # dir's own mode is kept.
 if [ ! -f ~/.bashrc ]; then

@@ -3,16 +3,20 @@
 Rootless-podman images over TigerVNC/noVNC, with Google Chrome (Chromium on Arch), the
 coding-agent CLI installers (Claude Code and others) and nested podman, in three layers:
 - **distros** `ubuntu` (26.04), `debian` (13 trixie), `fedora` (45), `archlinux` (rolling):
-  `<distro>/Containerfile`, stages `base` → `vnc` → `browser`;
-- **desktops** on a distro's `browser`: `<desktop>/Containerfile`, one stage per distro
+  `container/<distro>/Containerfile`, stages `base` → `vnc` → `browser`;
+- **desktops** on a distro's `browser`: `container/<desktop>/Containerfile`, one stage per distro
   that has it: Ubuntu xfce, lxqt, gnome (Flashback), kde, mate, cinnamon; Debian gnome
   (Shell); Fedora xfce, lxqt; Arch openbox;
-- **agent desktops** `<desktop>-<agent>` on a desktop: `<agent>/Containerfile`:
+- **agent desktops** `<desktop>-<agent>` on a desktop: `container/<agent>/Containerfile`:
   `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-claude` (Ubuntu);
-plus `devtools` (`chrome/`, Chrome automation on Ubuntu's `browser`).
-Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setup.
+plus `devtools` (`container/chrome/`, Chrome automation on Ubuntu's `browser`).
+Images are `vnc-desktop-<distro>:<target>-<version>`. Everything the images are built
+from is under `container/`; the top level has what the user works with (`env.rc`,
+`.env`, docs, `tests/`, `user_files/`, the `chrome/` helpers and the READMEs). See `README.md` for user-facing setup.
 
 ## Files
+Under `container/` (paths below without that prefix are relative to it, unless
+they say otherwise):
 - `ubuntu/Containerfile` — stages `base` (headless + nested rootless podman) →
   `vnc` (TigerVNC/noVNC, xterm session) → `browser` (Chrome + `cli-installers/`).
   The other distros' Containerfiles follow it. Package lists are kept **sorted**.
@@ -22,9 +26,9 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   stages with dnf: see "Fedora" in the design decisions.
 - `archlinux/Containerfile` — Arch Linux, same stages with pacman, Chromium in `browser`:
   see "Arch Linux" in the design decisions.
-  The build context is the repo root for all, so they `COPY` the shared `start.sh`,
-  `nested-subids`, `vncserver-wrapper` and `cli-installers/`; anything distro-specific
-  goes in that distro's directory.
+  The build context is the repo root for all, so they `COPY container/start.sh`,
+  `container/nested-subids`, `container/vncserver-wrapper`, `container/cli-installers/`
+  and `user_files/<distro>`; anything distro-specific goes in that distro's directory.
 - `xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` — one `Containerfile`
   each: `ARG BASE`, then one stage per distro named after it (`FROM ${BASE} AS ubuntu`),
   each the desktop's package `RUN` (with the distro's cache tail), a `RUN` writing
@@ -68,12 +72,24 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   either does, so the container stops; otherwise (`base`) `exec sleep infinity`.
 - `nested-subids` — `/usr/local/sbin`; `start.sh` runs it via `sudo` at every
   boot to fit subids and `newuidmap` caps to the container.
+- `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser-2604`,
+  tagged `vnc-desktop-ubuntu:devtools-2604`): `google-chrome-canary` (wrapper like stable's),
+  Openbox + xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
+  (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
+  `lighthouse`; `NODE_PATH` set), and Python's `playwright` in a venv made with
+  `uv`: `/opt/uv/bin/uv` and `/opt/venv`, both owned by the user and outside the
+  home volume, venv first on `PATH` and `VIRTUAL_ENV` set, so the user can
+  `uv pip install` without root. The top-level `chrome/search_screenshot.py` is a Python example
+  (web search → PNG via the DevTools port). `install_chrome_devtools` (run by the
+  user, like `install_claude`) copies `chrome-devtools-mcp`'s bundled skills to
+  `~/.claude/skills`.
+At the top level:
 - `env.rc` — host-side bash helpers, `source`d from any cwd; defaults at the top,
   then `.env` (may override `d_dir`, `d_user`, `d_distro`, `d_target`, …), then derived values.
   `d_distro` ∈ `d_images` keys; `d_target` is one of `d_stages` (`base vnc browser`:
-  `<distro>/Containerfile --target <stage>`), a desktop (`<dir>/Containerfile --target
+  `container/<distro>/Containerfile --target <stage>`), a desktop (`container/<dir>/Containerfile --target
   <distro>`, BASE `localhost/<image>:browser-<version>`; `d_dirs` maps `devtools` →
-  `chrome`) or `<desktop>-<agent>` (`<agent>/Containerfile --target <distro>`, BASE
+  `chrome`) or `<desktop>-<agent>` (`container/<agent>/Containerfile --target <distro>`, BASE
   `localhost/<image>:<desktop>-<version>`; agents in `d_agents`). Images are tagged
   `<image>:<target>-<version>` (`_d_tag`; versions in `d_versions`: ubuntu 2604, debian
   13, fedora 45, archlinux none, so `vnc-desktop-archlinux:openbox`). `_d_distro` works
@@ -99,20 +115,9 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   desktop "<agent text>; <desktop text>"; `d_description` overrides): **a new target or
   distro gets an entry there**. `_d_wait_ready` waits for password file + noVNC + a
   visible window; `_d_rm` is `d_rm` without asking.
-- `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser-2604`,
-  tagged `vnc-desktop-ubuntu:devtools-2604`): `google-chrome-canary` (wrapper like stable's),
-  Openbox + xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
-  (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
-  `lighthouse`; `NODE_PATH` set), and Python's `playwright` in a venv made with
-  `uv`: `/opt/uv/bin/uv` and `/opt/venv`, both owned by the user and outside the
-  home volume, venv first on `PATH` and `VIRTUAL_ENV` set, so the user can
-  `uv pip install` without root. `chrome/search_screenshot.py` is a Python example
-  (web search → PNG via the DevTools port). `install_chrome_devtools` (run by the
-  user, like `install_claude`) copies `chrome-devtools-mcp`'s bundled skills to
-  `~/.claude/skills`.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
-  `LICENSE`, `start.sh`, `nested-subids`, `vncserver-wrapper`, `cli-installers/` and
-  `*/user_files`. **A new `COPY` source needs a `!` line here.**
+  `LICENSE`, `container/{start.sh,nested-subids,vncserver-wrapper,cli-installers}` and
+  `user_files`. **A new `COPY` source needs a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
@@ -162,13 +167,14 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 (GitHub), but don't push from here: commit locally and leave the push to the user.
 
 ## Design decisions (don't undo without asking)
-- **Home is a volume** (`$d_dir/vnc-desktop-<distro>-N` → `/home/ed`). Anything put in
+- **Home is a volume** (`$d_dir/<instance name>` → `/home/ed`). Anything put in
   `/home/ed` at build time is hidden; per-user setup belongs in `start.sh`'s
   first-boot blocks (guarded by "file doesn't exist yet") or runs at runtime.
-  The user's own files for new homes go in `<distro>/user_files/` (gitignored, may
-  be absent; the user's, don't edit or print them): the base stage packs them
-  into `/usr/local/share/user_files.tar` (`COPY LICENSE <distro>/user_file[s]`:
-  LICENSE is there because COPY fails when nothing matches), and `start.sh`
+  The user's own files for new homes go in `user_files/<distro>/` at the top level
+  (gitignored, may be absent; the user's, don't edit or print them): the base stage
+  packs them into `/usr/local/share/user_files.tar` (`COPY LICENSE
+  user_files/ubunt[u]`: the bracket makes it a glob that may match nothing; LICENSE is
+  there because COPY fails when nothing matches), and `start.sh`
   unpacks it as the last step of the "no `~/.bashrc`" first-boot block, over
   `/etc/skel`'s files. The `D_NAME` `.bashrc` addition runs only when
   `$D_NAME` is set and the `.bashrc` doesn't mention it yet.
@@ -456,11 +462,11 @@ image has no package lists. Everything below uses the nested podman.
   Say so instead of guessing; the user tests on the host.
 
 ## Adding a desktop (checklist)
-1. `<desktop>/Containerfile` (new directory, `ARG BASE=localhost/vnc-desktop-<distro>:browser`
+1. `container/<desktop>/Containerfile` (new directory, `ARG BASE=localhost/vnc-desktop-<distro>:browser-<version>`
    and a header comment listing its stages, like `xfce/`), or a new stage in an existing
    one: `FROM ${BASE} AS <distro>`, `USER root`, `ARG USERID USER_UID`, one sorted package
    `RUN` with that distro's cache tail, a `RUN` writing `/usr/local/bin/vnc-session`,
-   then `USER ${USERID}`. An agent desktop is the same in `<agent>/Containerfile` on a
+   then `USER ${USERID}`. An agent desktop is the same in `container/<agent>/Containerfile` on a
    desktop (and the agent goes in `d_agents`, with ports and
    `d_descs`).
 2. Find out what works before writing it: is there an X11 session at all

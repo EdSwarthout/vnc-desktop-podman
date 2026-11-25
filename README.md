@@ -22,14 +22,17 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 | File            | Purpose                                                       |
 |-----------------|---------------------------------------------------------------|
-| `ubuntu/`, `debian/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (see [Images](#images)); `user_files/`, your files for new homes (not in git) |
-| `xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
-| `opencode/`, `antigravity/`, `claude/` | Agent desktops: a `Containerfile` with one stage per distro, built on a desktop; [OpenCode](opencode/README.md) and [Antigravity](antigravity/README.md) have a README |
-| `chrome/`       | Chrome automation: `Containerfile` (`devtools`: Ubuntu's `browser` + Chrome Canary and browser tools), `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`) and a [README](chrome/README.md) of the options |
-| `cli-installers/` | `install_claude`, `install_agy`, `install_opencode`, `install_grok`, `install_t3code`, in every `browser` stage (see [CLI installers](#cli-installers)) |
-| `start.sh`      | Container entrypoint (all images): first-boot setup, starts the VNC session if the stage has one |
-| `vncserver-wrapper` | `/usr/local/bin/vncserver` in every `vnc` stage: runs the VNC X server and the session in the foreground |
-| `nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
+| `container/`    | What the images are built from (you normally don't touch it): |
+| `container/ubuntu/`, `debian/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (see [Images](#images)) |
+| `container/xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
+| `container/opencode/`, `antigravity/`, `claude/`, `chrome/` | Agent desktops: a `Containerfile` with one stage per distro, built on a desktop; `chrome/`: `devtools`, Ubuntu's `browser` + Chrome Canary and browser tools |
+| `container/cli-installers/` | `install_claude`, `install_agy`, `install_opencode`, `install_grok`, `install_t3code`, in every `browser` stage (see [CLI installers](#cli-installers)) |
+| `container/start.sh` | Container entrypoint (all images): first-boot setup, starts the VNC session if the stage has one |
+| `container/vncserver-wrapper` | `/usr/local/bin/vncserver` in every `vnc` stage: runs the VNC X server and the session in the foreground |
+| `container/nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
+| `user_files/<distro>/` | Your files for new homes (not in git; see [below](#run-an-instance)) |
+| `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`), an example script and a [README](chrome/README.md) of the options |
+| `opencode/`, `antigravity/` | READMEs of the [OpenCode](opencode/README.md) and [Antigravity](antigravity/README.md) agent desktops |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
 | `docs/`         | [Screenshots](docs/README.md) of each desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
@@ -107,9 +110,9 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 
 There are three layers, each built on the one before:
 
-1. **The distro's stages**, in `<distro>/Containerfile`: `base` → `vnc` → `browser`.
-2. **A desktop**, in `<desktop>/Containerfile`, built on the distro's `browser`.
-3. **An agent desktop** `<desktop>-<agent>`, in `<agent>/Containerfile`, built on
+1. **The distro's stages**, in `container/<distro>/Containerfile`: `base` → `vnc` → `browser`.
+2. **A desktop**, in `container/<desktop>/Containerfile`, built on the distro's `browser`.
+3. **An agent desktop** `<desktop>-<agent>`, in `container/<agent>/Containerfile`, built on
    that desktop: `lxqt-opencode`, `lxqt-antigravity`, `gnome-claude`.
 
 `d_target` names any of them; `d_build` builds what it's built on first. A desktop's
@@ -298,9 +301,10 @@ image's session, unless the home has one (a customised one is kept).
 `d_run` uses `--replace`, so running it again restarts the instance from the
 current image; the home dir is kept.
 
-**Your own files in new homes:** put them in `<distro>/user_files/`
-(`ubuntu/`, `debian/`, `fedora/`, `archlinux/`; gitignored; the desktops and agent
-desktops use their distro's), laid out as in the home, e.g. `.bashrc`,
+**Your own files in new homes:** put them in `user_files/<distro>/` at the top of
+the repo (`user_files/ubuntu/`, `user_files/debian/`, …; gitignored; the desktops and
+agent desktops use their distro's; before the `container/` move they were in
+`<distro>/user_files/`: move them), laid out as in the home, e.g. `.bashrc`,
 `.bash_aliases`, `Downloads/…`, and `d_build`. The build packs them into the
 image (`/usr/local/share/user_files.tar`; changing them rebuilds every stage),
 and on a new home's first boot `start.sh` unpacks them, over the `/etc/skel`
@@ -396,7 +400,7 @@ which one exited.
 
 **No root inside.** The image is meant to carry everything needed: `ed` has no
 general `sudo` (the one exception is the boot-time `nested-subids`, which
-`start.sh` runs). To add a package, put it in the `<distro>/Containerfile` (`base`
+`start.sh` runs). To add a package, put it in `container/<distro>/Containerfile` (`base`
 stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
 `podman exec -u root <instance> apt-get update` / `… apt-get install -y PKG` (Fedora:
 `dnf install -y PKG`; Arch: `pacman -Syu --needed PKG`; lost when the container is

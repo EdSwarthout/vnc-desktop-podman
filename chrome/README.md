@@ -5,7 +5,7 @@ parent instance for a nested one (`vnc-desktop-ubuntu-lxqt-2604-6908` →
 `vnc-desktop-ubuntu-lxqt-2604-6908_vnc-desktop-ubuntu-lxqt-2604-6901`). The helpers are in
 [`env.rc`](env.rc) here, which the top-level `env.rc` sources. They work with every
 image from `browser` on; the [image](#the-browser-image) built from the
-[`Containerfile`](Containerfile) here adds Chrome Canary and the tools.
+[`container/chrome/Containerfile`](../container/chrome/Containerfile) adds Chrome Canary and the tools.
 
 ## Helpers
 
@@ -51,7 +51,7 @@ with `d_devtools_opts`, e.g. `d_devtools_opts=(--performanceCrux)` or `(--catego
 
 ## The browser image
 
-`d_target=devtools` selects [`Containerfile`](Containerfile) here: Ubuntu's `browser`
+`d_target=devtools` selects [`container/chrome/Containerfile`](../container/chrome/Containerfile): Ubuntu's `browser`
 stage (stable Chrome, TigerVNC/noVNC, nested podman, the CLI installers) plus, in its
 stage `ubuntu`, image `vnc-desktop-ubuntu:devtools-2604`:
 
