@@ -1,4 +1,4 @@
-# Google Antigravity agent desktop (`d_target=lxqt-antigravity`)
+# Google Antigravity agent desktop (`d_target=lxqt-antigravity`, `gnome-antigravity`)
 
 [Google Antigravity](https://antigravity.google), Google's agentic coding platform: the
 desktop App, its Python SDK, and an installer for its CLI (`agy`), on LXQt (with
@@ -20,8 +20,12 @@ d_target=lxqt-antigravity d_novnc              # or noVNC on 6381, in a browser
 d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-lxqt-antigravity-45-7201, same ports
 ```
 
-Keep `d_target=lxqt-antigravity` on each line (or set it in your shell or `.env`): the
-instance's name, home and ports follow it.
+On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-antigravity` (built on
+`vnc-desktop-ubuntu:gnome-2604`, instances `vnc-desktop-ubuntu-gnome-antigravity-2604-<VNC port>`).
+It has the same ports as `lxqt-antigravity`, so run the two on different numbers.
+
+Keep `d_target=lxqt-antigravity` (or `gnome-antigravity`) on each line (or set it in your
+shell or `.env`): the instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|

@@ -114,7 +114,8 @@ There are three layers, each built on the one before:
 1. **The distro's stages**, in `container/<distro>/Containerfile`: `base` → `vnc` → `browser`.
 2. **A desktop**, in `container/<desktop>/Containerfile`, built on the distro's `browser`.
 3. **An agent desktop** `<desktop>-<agent>`, in `container/<agent>/Containerfile`, built on
-   that desktop: `lxqt-opencode`, `lxqt-antigravity`, `gnome-claude`.
+   that desktop: `lxqt-opencode`, `lxqt-antigravity`, `gnome-opencode`,
+   `gnome-antigravity`, `gnome-claude`.
 
 `d_target` names any of them; `d_build` builds what it's built on first. A desktop's
 or agent's `Containerfile` has one stage per distro that has it, named after the
@@ -139,6 +140,8 @@ one is runnable with `d_run`. The versions are `d_versions` in `env.rc`.
 | `openbox` | Openbox, a bare window manager, `scrot` | Openbox | archlinux |
 | `lxqt-opencode` | [OpenCode](container/opencode/README.md) Desktop and the `opencode` terminal UI | LXQt | ubuntu, fedora |
 | `lxqt-antigravity` | [Google Antigravity](container/antigravity/README.md) App and Python SDK | LXQt | ubuntu, fedora |
+| `gnome-opencode` | the same as `lxqt-opencode` | GNOME Flashback | ubuntu |
+| `gnome-antigravity` | the same as `lxqt-antigravity` | GNOME Flashback | ubuntu |
 | `gnome-claude` | the [Claude desktop app](container/claude/README.md) (`claude-desktop`, beta) | GNOME Flashback | ubuntu |
 | `devtools` | [Chrome automation](chrome/README.md): Chrome Canary, MCP servers, Puppeteer, Playwright, Lighthouse | Openbox + `xterm` | ubuntu |
 
@@ -188,15 +191,19 @@ run beside the distro's plain desktops. Every image also has the
 
 | Target | Adds | Desktop | Distros | VNC / noVNC (host) | README |
 |--------|------|---------|---------|--------------------|--------|
-| `lxqt-opencode` | OpenCode Desktop and the `opencode` terminal UI | LXQt | ubuntu, fedora | 7150+N / 6330+N | [container/opencode](container/opencode/README.md) |
-| `lxqt-antigravity` | Google Antigravity App and its Python SDK (`install_agy` for the `agy` CLI) | LXQt | ubuntu, fedora | 7200+N / 6380+N | [container/antigravity](container/antigravity/README.md) |
+| `lxqt-opencode`, `gnome-opencode` | OpenCode Desktop and the `opencode` terminal UI | LXQt (ubuntu, fedora), GNOME Flashback (ubuntu) | see Desktop | 7150+N / 6330+N | [container/opencode](container/opencode/README.md) |
+| `lxqt-antigravity`, `gnome-antigravity` | Google Antigravity App and its Python SDK (`install_agy` for the `agy` CLI) | LXQt (ubuntu, fedora), GNOME Flashback (ubuntu) | see Desktop | 7200+N / 6380+N | [container/antigravity](container/antigravity/README.md) |
 | `gnome-claude` | the Claude desktop app (`claude-desktop`, beta) | GNOME Flashback | ubuntu | 7400+N / 6580+N | [container/claude](container/claude/README.md) |
 
 ```bash
 d_target=lxqt-opencode d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first
 d_select 1; d_target=lxqt-opencode d_run        # vnc-desktop-ubuntu-lxqt-opencode-2604-7151
 d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's
+d_target=gnome-opencode d_run                  # on Ubuntu's GNOME Flashback instead
 ```
+
+The ports belong to the agent, not the desktop: `lxqt-opencode` and `gnome-opencode`
+on the same N want the same ports, so run them on different numbers.
 
 They build on amd64 and arm64. `gnome-claude` is Ubuntu only, as the app is still in
 beta; it gives a new home a passwordless keyring for the app's secrets (not
@@ -444,7 +451,8 @@ the host, update `.env`, `source env.rc`, then `d_run` again — or run
 `vncpasswd` inside the container and restart it.
 
 **Try every target at once:** `d_all N` builds each target of `$d_distro` (Ubuntu: `base vnc browser
-xfce lxqt gnome kde mate cinnamon devtools lxqt-opencode lxqt-antigravity gnome-claude`) and runs it
+xfce lxqt gnome kde mate cinnamon devtools lxqt-opencode lxqt-antigravity gnome-opencode
+gnome-antigravity gnome-claude`) and runs it
 on instance N, N+1, …, opening a `d_vnc` viewer in the background for each one with a desktop (log
 in `/tmp/d_all-<name>.log`). `d_all 11 xfce lxqt` limits it to those targets. N is required, because
 `d_run` replaces whatever instance has that number.
@@ -497,7 +505,8 @@ for all of it and the other options.
 **Agent desktops:** `d_target=lxqt-opencode d_build`, then `d_select N;
 d_target=lxqt-opencode d_run` gives LXQt with OpenCode Desktop in the menu
 (Development) and `opencode` (the terminal UI) on the PATH. The others are
-`lxqt-antigravity` and `gnome-claude`; see [Agent desktops](#agent-desktops).
+`lxqt-antigravity`, `gnome-opencode`, `gnome-antigravity` and `gnome-claude`; see
+[Agent desktops](#agent-desktops).
 
 **Remove an instance:** `d_rm [N]` removes the container **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.

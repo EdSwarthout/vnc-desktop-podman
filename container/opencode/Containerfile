@@ -1,10 +1,10 @@
 ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
 
-# OpenCode (agent desktop "opencode", d_target=<desktop>-opencode, e.g. lxqt-opencode;
-# https://opencode.ai), on a distro's desktop stage (Chrome, the CLI installers,
-# TigerVNC/noVNC, nested podman): the OpenCode desktop app and its terminal UI. One stage
-# per distro that has it; d_build picks the stage named like d_distro, with
-# BASE=localhost/vnc-desktop-<distro>:<desktop>, and tags the image
+# OpenCode (agent desktop "opencode", d_target=<desktop>-opencode, e.g. lxqt-opencode,
+# gnome-opencode; https://opencode.ai), on a distro's desktop stage (Chrome, the CLI
+# installers, TigerVNC/noVNC, nested podman): the OpenCode desktop app and its terminal
+# UI. One stage per distro that has it; d_build picks the stage named like d_distro,
+# with BASE=localhost/vnc-desktop-<distro>:<desktop>, and tags the image
 # vnc-desktop-<distro>:<desktop>-opencode. The build context is the repo root.
 #   ubuntu - OpenCode Desktop (Electron .deb) and the opencode CLI
 #   fedora - the same from the .rpm
@@ -40,8 +40,8 @@ RUN curl -fsSLo /tmp/opencode-desktop.deb \
 # /usr/bin/ai.opencode on PATH) adds --no-sandbox, and the menu entries are pointed at it
 # (the build fails if a new package's .desktop files no longer have the expected Exec=).
 # --password-store=basic: Electron's safeStorage keeps secrets (provider logins) in a
-# file instead of a keyring; there's no keyring daemon in LXQt, and no user password to
-# unlock one with.
+# file instead of a keyring: the user has no password to unlock a keyring with, and
+# LXQt has no keyring daemon.
 RUN printf '#!/bin/sh\nexec /opt/OpenCode/ai.opencode --no-sandbox --password-store=basic "$@"\n' \
         > /usr/local/bin/ai.opencode \
     && chmod +x /usr/local/bin/ai.opencode \

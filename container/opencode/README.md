@@ -1,4 +1,4 @@
-# OpenCode agent desktop (`d_target=lxqt-opencode`)
+# OpenCode agent desktop (`d_target=lxqt-opencode`, `gnome-opencode`)
 
 [OpenCode](https://opencode.ai/product), an open-source AI coding agent, as a desktop
 app and a terminal UI, on LXQt (with Google Chrome, TigerVNC/noVNC, nested podman and
@@ -17,8 +17,12 @@ d_target=lxqt-opencode d_novnc              # or noVNC on 6331, in a browser
 d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: vnc-desktop-fedora-lxqt-opencode-45-7151, same ports
 ```
 
-Keep `d_target=lxqt-opencode` on each line (or set it in your shell or `.env`): the
-instance's name, home and ports follow it.
+On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-opencode` (built on
+`vnc-desktop-ubuntu:gnome-2604`, instances `vnc-desktop-ubuntu-gnome-opencode-2604-<VNC port>`).
+It has the same ports as `lxqt-opencode`, so run the two on different numbers.
+
+Keep `d_target=lxqt-opencode` (or `gnome-opencode`) on each line (or set it in your
+shell or `.env`): the instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|

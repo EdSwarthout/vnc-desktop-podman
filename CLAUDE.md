@@ -8,7 +8,9 @@ coding-agent CLI installers (Claude Code and others) and nested podman, in three
   that has it: Ubuntu xfce, lxqt, gnome (Flashback), kde, mate, cinnamon; Debian gnome
   (Shell); Fedora xfce, lxqt; Arch openbox;
 - **agent desktops** `<desktop>-<agent>` on a desktop: `container/<agent>/Containerfile`:
-  `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-claude` (Ubuntu);
+  `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-opencode`,
+  `gnome-antigravity`, `gnome-claude` (Ubuntu); an agent's `ubuntu` stage works on any
+  Ubuntu desktop, as BASE is the desktop's image;
 plus `devtools` (`container/chrome/`, Chrome automation on Ubuntu's `browser`).
 Images are `vnc-desktop-<distro>:<target>-<version>`. Everything the images are built
 from is under `container/`, with each agent desktop's README beside its Containerfile;

@@ -1,12 +1,12 @@
 ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
 
 # Google Antigravity (agent desktop "antigravity", d_target=<desktop>-antigravity, e.g.
-# lxqt-antigravity; https://antigravity.google), on a distro's desktop stage (Chrome,
-# the CLI installers incl. install_agy, TigerVNC/noVNC, nested podman): the Antigravity
-# desktop app and its Python SDK. One stage per distro that has it; d_build picks the
-# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:<desktop>, and
-# tags the image vnc-desktop-<distro>:<desktop>-antigravity. The build context is the
-# repo root.
+# lxqt-antigravity, gnome-antigravity; https://antigravity.google), on a distro's
+# desktop stage (Chrome, the CLI installers incl. install_agy, TigerVNC/noVNC, nested
+# podman): the Antigravity desktop app and its Python SDK. One stage per distro that has
+# it; d_build picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:<desktop>, and tags the image
+# vnc-desktop-<distro>:<desktop>-antigravity. The build context is the repo root.
 #   ubuntu, fedora - Antigravity App (Electron tarball) and Python SDK: the same for both
 #            (no package manager involved), so both are the stage "app" under their name
 # See README.md here.
@@ -57,7 +57,8 @@ RUN set -e; \
 # Electron's sandbox needs user namespaces or a setuid chrome-sandbox, neither of which
 # works in a rootless container: the wrapper adds --no-sandbox. --password-store=basic:
 # Electron's safeStorage keeps secrets (the Google sign-in) in a file instead of a
-# keyring; there's no keyring daemon in LXQt, and no user password to unlock one with.
+# keyring: the user has no password to unlock a keyring with, and LXQt has no keyring
+# daemon.
 # The tarball has no .desktop file (nor an icon file): the menu entry is ours.
 RUN printf '#!/bin/sh\nexec /opt/Antigravity/antigravity --no-sandbox --password-store=basic "$@"\n' \
         > /usr/local/bin/antigravity \
