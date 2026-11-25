@@ -9,24 +9,24 @@ package manager involved), built on `vnc-desktop-<distro>:lxqt` and tagged
 publishes the App, the CLI and the SDK's wheels for both, and it runs on an arm64 DGX
 Spark as well as on amd64.
 
-![The Antigravity App in ag1u on arm64, and in a nested instance ag1u_ag1u](../docs/antigravity/lxqt-nested.png)
+![The Antigravity App in an instance on arm64, and in a nested instance inside it](../docs/antigravity/lxqt-nested.png)
 
 ```bash
 source ./env.rc
 d_target=lxqt-antigravity d_build              # builds vnc-desktop-ubuntu:lxqt first
-d_select 1; d_target=lxqt-antigravity d_run    # instance ag1u
+d_select 1; d_target=lxqt-antigravity d_run    # vnc-desktop-ubuntu-antigravity-1
 d_target=lxqt-antigravity d_vnc                # VNC 7201 (needs vncviewer)
 d_target=lxqt-antigravity d_novnc              # or noVNC on 6381, in a browser
-d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: ag1f, same ports
+d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-antigravity-1, same ports
 ```
 
 Keep `d_target=lxqt-antigravity` on each line (or set it in your shell or `.env`): the
 instance's name, home and ports follow it.
 
-| Distro | Container name | Home                       | VNC    | noVNC  |
-|--------|----------------|----------------------------|--------|--------|
-| ubuntu | `agNu`         | `$d_dir/u2604antigravityN` | 7200+N | 6380+N |
-| fedora | `agNf`         | `$d_dir/vnc-desktop-fedora-antigravityN` | 7200+N | 6380+N |
+| Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
+|--------|----------------------------------------|--------|--------|
+| ubuntu | `vnc-desktop-ubuntu-antigravity-N`     | 7200+N | 6380+N |
+| fedora | `vnc-desktop-fedora-antigravity-N`     | 7200+N | 6380+N |
 
 Nested (from inside an instance) it is `<this instance>_agNu`.
 

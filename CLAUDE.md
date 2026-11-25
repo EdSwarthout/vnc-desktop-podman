@@ -131,17 +131,17 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
 - `docs/` — `README.md` gallery with one screenshot per desktop on a fresh home
   (`docs/<distro>/<target>.png`); retake a desktop's picture when its initial look changes
   (`[d_distro=…] d_screenshots N <target>`). Taken by hand, not by `d_screenshots`:
-  `archlinux/browser.png`, `antigravity/lxqt-nested.png` (the App in `ag1u` and a nested
+  `archlinux/browser.png`, `antigravity/lxqt-nested.png` (the App in an instance, then named `ag1u`, and a nested
   `ag1u_ag1u` on arm64).
 - `.env` — `export VNC_PASSWORD=…` and local settings such as `d_dir=…`
   (gitignored, never commit or print it). Usually absent inside an instance.
 
 ## Where you're probably running
-Claude Code usually runs *inside* an instance (e.g. `cc1u`) with this repo on
+Claude Code usually runs *inside* an instance (e.g. `vnc-desktop-ubuntu-1`) with this repo on
 the home volume. Every image has a nested rootless podman
 for scratch containers, but it is *not* the host's podman, and the host paths
 (`$d_dir`, the NFS apt cache) are not visible. When `$container` is set, `env.rc`
-switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_N<distro letter>` (e.g. `cc1u_1d`) with home `~/Containers/<that name>`,
+switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_<image>[-<layer>]-N` (e.g. `vnc-desktop-ubuntu-1_vnc-desktop-debian-1`) with home `~/Containers/<that name>`,
 the instance's `/var/cache/apt-<distro>` cache mounts, no `--hostname`), so `d_build`/`d_run` here
 build and run a nested instance in the nested podman, not a host one. Check things in the container directly (`/proc/1/environ`,
 `mountpoint /var/cache/apt-ubuntu /var/cache/apt-debian /var/cache/apt-fedora`, `~/.config/tigervnc`) and test `env.rc`
@@ -159,7 +159,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 (GitHub), but don't push from here: commit locally and leave the push to the user.
 
 ## Design decisions (don't undo without asking)
-- **Home is a volume** (`$d_dir/u2604ccN`, `$d_dir/d13ccN`, … → `/home/ed`). Anything put in
+- **Home is a volume** (`$d_dir/vnc-desktop-<distro>-N` → `/home/ed`). Anything put in
   `/home/ed` at build time is hidden; per-user setup belongs in `start.sh`'s
   first-boot blocks (guarded by "file doesn't exist yet") or runs at runtime.
   The user's own files for new homes go in `<distro>/user_files/` (gitignored, may
@@ -208,13 +208,14 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `xstartup` only runs it under `dbus-launch`, so a home works with any image.
   `vncserver` is the shared `vncserver-wrapper` in every distro (Debian/Ubuntu's perl
   one has its own options and logs, Arch's and Fedora's need systemd); `_d_session_sh`
-  still also matches the perl one, for instances on older images.
+  finds the session as the wrapper's child that isn't the X server.
 - **Layers**: a desktop or agent `Containerfile` has one stage per distro, named after
   it, chosen with `--target <distro>`; a pair with no stage isn't supported (env.rc
   refuses it). A stage with nothing distro-specific is shared (`antigravity`: `FROM app
-  AS ubuntu`). Agents and `devtools` keep their instance prefixes and old homes
-  (`d_name0s`, `d_letters`, `d_home_names` keyed by layer / `<distro>:<layer>`), so homes
-  from before the restructure still work.
+  AS ubuntu`). Agents and `devtools` have their own instances (names, homes, ports),
+  keyed by the layer.
+- **Nothing old is supported yet** (the user, 2026-11-24): no compatibility with older
+  images, instance names or homes needs keeping; prefer the clean scheme.
 - **LXQt without recommends** needs explicit `breeze-icon-theme`,
   `libxcb-cursor0`, `lxqt-menu-data`, `openbox`, `qt6-svg-plugins` on Ubuntu (see the
   `lxqt` stage comment); the default panel drops the `volume` plugin
@@ -248,7 +249,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `ping` ships without file caps (it relies on `ping_group_range`, "0 0" in the
   container), so `base` does `setcap cap_net_raw=ep /usr/bin/ping` like Ubuntu's.
 - **Fedora** (`fedora/`, Fedora 45): desktops `xfce`, `lxqt`, agents `lxqt-opencode`,
-  `lxqt-antigravity`. Instances `ccNf`, ports 7350+N / 6530+N, homes `f45ccN`.
+  `lxqt-antigravity`. Instances `vnc-desktop-fedora-N`, ports 7350+N / 6530+N.
   - *Package cache*: dnf5 with `keepcache=True`, `cachedir` and `system_cachedir` (the
     one root uses) = `/var/cache/apt-fedora` in `dnf.conf`, so the shared
     `apt-cache-fedora` holds rpms **and repository metadata**; `install_weak_deps=False`
@@ -368,38 +369,33 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   on `uid_map`). Those subids and caps are only build-time defaults:
   `nested-subids` rewrites the subids from `/proc/self/{uid,gid}_map` extents
   and re-applies the caps at every boot, so a desktop nested in an instance
-  (`ccNu_Md`) works too. `/etc/subgid` also gets `ed:0:1` (the
+  (`vnc-desktop-ubuntu-N_vnc-desktop-debian-M`) works too. `/etc/subgid` also gets `ed:0:1` (the
   instance's root group), so root in a nested build can write the shared apt
-  cache's `partial/` (`_apt:root`, 700); podman sorts it to nested gid 1, which
-  shifted nested gids by one, so older nested storage needs one
-  `podman system reset` (`start.sh` warns; marker `~/.local/share/containers/.subgid-root-mapped`).
+  cache's `partial/` (`_apt:root`, 700); podman sorts it to nested gid 1.
   `d_run` passes `/dev/fuse`,  `/dev/net/tun` and `unmask=/proc/*` (needed for nested `proc` mounts).
-  An instance created before `d_run` added `unmask=/proc/*` needs recreating with `d_run`.
   Nested storage is in the instance's `~/.local/share/containers`, owned by mapped
   sub-IDs (delete it with `podman unshare rm -rf`, also from the host); ports a nested
   container publishes are reachable only inside the instance, so connect from there
   (`d_vnc`). `d_run` omits `--hostname` when `$container` is set (it wouldn't work).
   Without a `.env`, a nested desktop gets a copy of this instance's VNC password file.
   No seccomp or further relaxation: ask before adding any.
-- Instance N (1-49) → container `ccN` + first letter of `d_distro` (`cc1u`,
-  `cc1d`, `cc1f`, `cc1a`), same hostname; home `${d_homes0[<distro>]}N`, default
-  `$d_dir/<d_home_names entry>N` (`u2604cc1`, `d13cc1`, `f45cc1`, `archcc1`; with no entry
-  `<image>[-<layer>]N`, e.g. `vnc-desktop-ubuntu-claude1`). When `d_run` runs nested (`$container` set) it's
-  `<this instance>_N<letter>` (e.g. `cc2u_1d`, then `cc2u_1d_1u`), home
-  `~/Containers/<that name>`, with no `--hostname`; the parent's name comes
-  from `$D_NAME`, which `d_run` sets (nested instances share the hostname),
-  falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
+- Instance N (1-49) → `<image>-N` (`vnc-desktop-ubuntu-1`, `vnc-desktop-fedora-1`): the
+  container, its hostname and its home `${d_homes0[<distro>]:-$d_dir/<image>}-N`; a
+  distro's stages and desktops share it. Devtools and agents: `<image>-<layer>-N`
+  (`vnc-desktop-ubuntu-devtools-1`, `vnc-desktop-fedora-antigravity-7`; `d_homes0` key
+  `<distro>:<layer>`). When `d_run` runs nested (`$container` set) it's
+  `<this instance>_<that name>` (e.g. `vnc-desktop-ubuntu-2_vnc-desktop-debian-1`, and
+  so on one level deeper), home `~/Containers/<that name>`, with no `--hostname`; the
+  parent's name comes from `$D_NAME`, which `d_run` sets (nested instances share the
+  hostname), falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
   Debian 6950+N / 6130+N, devtools 7000+N / 6180+N, archlinux 7050+N / 6230+N,
   opencode 7150+N / 6330+N, antigravity 7200+N / 6380+N, fedora 7350+N / 6530+N,
   claude 7400+N / 6580+N, so every distro's instance N can run at once (7100/6280:
   the `research` branch's omarchy; 7250/6430 and 7300/6480 were grok's and t3code's).
-  A layer has its own prefix and letter (`d_name0s`, `d_letters`): opencode is `oc1u`
-  (`oc1f` on Fedora; the letter is the distro's), nested `<this instance>_oc1u`;
-  antigravity `ag1u`; claude `cl1u`; devtools `cc1c`. The same layer on two distros
-  shares its ports. `d_select N` keeps only N; `_d_names` works out name, home and
-  ports from the current `d_distro` and `d_target` in every function that needs them
-  (via `_d_need_instance`), so `d_select 1; d_distro=debian d_target=gnome d_run` is
-  `cc1d`.
+  The same layer on two distros shares its ports. `d_select N` keeps only N;
+  `_d_names` works out name, home and ports from the current `d_distro` and
+  `d_target` in every function that needs them (via `_d_need_instance`), so
+  `d_select 1; d_distro=debian d_target=gnome d_run` is `vnc-desktop-debian-1`.
 
 ## Conventions
 - `env.rc`: build podman commands as bash arrays, `echo` then run; quote
@@ -415,7 +411,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 You are `ed` with **no root** here (`sudo` only runs `nested-subids`), and the
 image has no package lists. Everything below uses the nested podman.
 - **All of it in one go**: `source ./env.rc; [d_distro=…] d_test N <target>`
-  (N unused, e.g. 1): builds, runs `<this instance>_N<letter>` on a new home, runs
+  (N unused, e.g. 1): builds, runs `<this instance>_<image>-N` on a new home, runs
   the checks below (ok/FAIL lines, non-zero status on a FAIL) and removes it again.
   Logs and the screenshot are in `/tmp/d_test/<instance>-<target>.{build.log,log,png}`:
   Read the PNG. `d_test_keep=1` leaves the instance up for a closer look (then
@@ -424,15 +420,16 @@ image has no package lists. Everything below uses the nested podman.
   minutes (use a long timeout, log to a file, check the exit status). Changing
   `start.sh` or anything in `base` rebuilds every later stage and all desktops on it.
 - **Run a throwaway instance**: `d_run_new` (picks a free number), then
-  `[d_distro=…] d_target=<target> d_run`. It is `<this instance>_N<letter>`, e.g. `cc1u_1u`, with home
-  `~/Containers/cc1u_1u`, which is directly readable here: copy files in and
-  out with plain `cp` (e.g. `cp -r tests ~/Containers/cc1u_1u/`), no `podman cp`
+  `[d_distro=…] d_target=<target> d_run`. It is `<this instance>_<image>-N`, e.g. `vnc-desktop-ubuntu-20_vnc-desktop-ubuntu-1` (`$d_name`
+  after `d_select`), with home `~/Containers/<that>` (`$d_home`), which is directly
+  readable here: copy files in and out with plain `cp` (e.g. `cp -r tests "$d_home"/`),
+  no `podman cp`
   needed. No `.env` is needed: it gets a copy of this instance's VNC password.
-- **Look at it**: `podman exec cc1u_1u /home/ed/tests/screenshot.sh /home/ed/s.png`,
-  then Read `~/Containers/cc1u_1u/s.png`. Give a desktop 15-40 s to come up first.
+- **Look at it**: `podman exec "$d_name" /home/ed/tests/screenshot.sh /home/ed/s.png`,
+  then Read `$d_home/s.png`. Give a desktop 15-40 s to come up first.
   Start GUI apps with `d_exec -s -d <app>` (DISPLAY is already set; plain
   `podman exec -d` has ambient caps and no session bus).
-- **Root for experiments**: `podman exec -u root cc1u_1u sh -c 'apt-get update &&
+- **Root for experiments**: `podman exec -u root "$d_name" sh -c 'apt-get update &&
   apt-get install -y …'` (Fedora: `dnf install -y …`; try packages there before editing
   the Containerfile). `xdotool` (keys, clicks, window queries) is in every image from
   `vnc` on. To query packages without an instance:
@@ -445,9 +442,9 @@ image has no package lists. Everything below uses the nested podman.
   `sudo -n true` is refused; noVNC answers on `http://127.0.0.1:<6080+N, Debian 6130+N, …>/vnc.html`
   and `[::1]`; ending the session stops the container (`podman ps -a` shows
   Exited, log says "vncserver exited") and `podman start` brings it back.
-- **Clean up** what you started: `d_rm -f N` (= `podman rm -f -t 2 cc1u_1u`, retried
+- **Clean up** what you started: `d_rm -f N` (= `podman rm -f -t 2 "$d_name"`, retried
   because it sometimes fails once with an `openByHandleAt` error about exec
-  sessions, then `podman unshare rm -rf ~/Containers/cc1u_1u`; plain `rm` fails on
+  sessions, then `podman unshare rm -rf "$d_home"`; plain `rm` fails on
   sub-ID-owned files). Check `podman ps -a`.
 - **Not testable here**: the real host (NFS apt cache, host paths, other UIDs).
   Say so instead of guessing; the user tests on the host.
@@ -458,7 +455,7 @@ image has no package lists. Everything below uses the nested podman.
    one: `FROM ${BASE} AS <distro>`, `USER root`, `ARG USERID USER_UID`, one sorted package
    `RUN` with that distro's cache tail, a `RUN` writing `/usr/local/bin/vnc-session`,
    then `USER ${USERID}`. An agent desktop is the same in `<agent>/Containerfile` on a
-   desktop (and the agent goes in `d_agents`, with a prefix in `d_name0s`, ports and
+   desktop (and the agent goes in `d_agents`, with ports and
    `d_descs`).
 2. Find out what works before writing it: is there an X11 session at all
    (GNOME Shell: no), does its session manager need systemd/logind (start

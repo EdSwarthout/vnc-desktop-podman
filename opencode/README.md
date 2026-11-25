@@ -11,19 +11,19 @@ native arm64 CLI on arm64.
 ```bash
 source ./env.rc
 d_target=lxqt-opencode d_build              # builds vnc-desktop-ubuntu:lxqt first
-d_select 1; d_target=lxqt-opencode d_run    # instance oc1u
+d_select 1; d_target=lxqt-opencode d_run    # vnc-desktop-ubuntu-opencode-1
 d_target=lxqt-opencode d_vnc                # VNC 7151 (needs vncviewer)
 d_target=lxqt-opencode d_novnc              # or noVNC on 6331, in a browser
-d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: oc1f, same ports
+d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: vnc-desktop-fedora-opencode-1, same ports
 ```
 
 Keep `d_target=lxqt-opencode` on each line (or set it in your shell or `.env`): the
 instance's name, home and ports follow it.
 
-| Distro | Container name | Home                    | VNC    | noVNC  |
-|--------|----------------|-------------------------|--------|--------|
-| ubuntu | `ocNu`         | `$d_dir/u2604opencodeN` | 7150+N | 6330+N |
-| fedora | `ocNf`         | `$d_dir/vnc-desktop-fedora-opencodeN` | 7150+N | 6330+N |
+| Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
+|--------|----------------------------------------|--------|--------|
+| ubuntu | `vnc-desktop-ubuntu-opencode-N`        | 7150+N | 6330+N |
+| fedora | `vnc-desktop-fedora-opencode-N`        | 7150+N | 6330+N |
 
 Nested (from inside an instance) it is `<this instance>_ocNu`, so it can't clash with an
 Ubuntu child `<this instance>_Nu`.

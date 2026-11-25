@@ -1,7 +1,8 @@
 # Automating Chrome in an instance
 
 How to drive the Chrome of an instance from outside it: from the host, or from a
-parent instance for a nested one (`cc8u` → `cc8u_1u`). The helpers are in
+parent instance for a nested one (`vnc-desktop-ubuntu-8` →
+`vnc-desktop-ubuntu-8_vnc-desktop-ubuntu-1`). The helpers are in
 [`env.rc`](env.rc) here, which the top-level `env.rc` sources. They work with every
 image from `browser` on; the [image](#the-browser-image) built from the
 [`Containerfile`](Containerfile) here adds Chrome Canary and the tools.
@@ -31,7 +32,7 @@ image from `browser` on; the [image](#the-browser-image) built from the
 source env.rc; d_select 1; d_run
 d_chrome https://example.com
 d_exec curl -s http://127.0.0.1:9222/json/list      # the open pages, as JSON
-d_chrome_mcp                                        # prints: claude mcp add chrome-cc1u -- podman exec -i cc1u …
+d_chrome_mcp                                        # prints: claude mcp add chrome-vnc-desktop-ubuntu-1 -- podman exec -i vnc-desktop-ubuntu-1 …
 
 # with the browser image (d_target=devtools):
 d_devtools list_pages
@@ -80,7 +81,7 @@ stage `ubuntu`, image `vnc-desktop-ubuntu:devtools`:
 
 ```bash
 d_target=devtools d_build                    # builds vnc-desktop-ubuntu:browser first
-d_select 1; d_target=devtools d_run          # cc1c, VNC 7001, noVNC 6181
+d_select 1; d_target=devtools d_run          # vnc-desktop-ubuntu-devtools-1, VNC 7001, noVNC 6181
 d_target=devtools d_chrome_bin=google-chrome-canary d_chrome https://example.com
 d_target=devtools d_exec node my-script.js   # a Puppeteer/Playwright script in the home
 cp chrome/search_screenshot.py "$d_home"/    # the example below
@@ -124,7 +125,7 @@ The other images need no change for the first three: Chrome, Node 22 and npm are
 already there (`nodejs` and `npm` are in `base`); the browser image only saves the
 downloads.
 
-## What has been tried (2026-11-16, nested in `cc8u`)
+## What has been tried (2026-11-16, nested in an Ubuntu instance)
 
 - `d_chrome` on a Ubuntu `gnome` instance (Chrome 157): the port answered, `/json/list`
   showed the pages, a second `d_chrome URL` opened in the same browser. Not run on Debian.

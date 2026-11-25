@@ -9,7 +9,7 @@ screenshot and closes the tab again.
     search_screenshot.py "podman rootless" --engine google --full-page --keep
 
 Needs the Python package playwright (the library only, no browser download). The
-browser image (u2604chrome:devtools) has it; in another one, in the instance:
+browser image (vnc-desktop-ubuntu:devtools) has it; in another one, in the instance:
     python3 -m venv ~/.venvs/pw && ~/.venvs/pw/bin/pip install playwright
     ~/.venvs/pw/bin/python search_screenshot.py "..."
 """

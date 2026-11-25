@@ -60,18 +60,6 @@ if [ -x /usr/local/sbin/nested-subids ]; then
     if [ "$old" != "$(cat /etc/subuid /etc/subgid)" ]; then
         podman system migrate || echo "start.sh: podman system migrate failed" >&2
     fi
-    # Nested storage created before /etc/subgid had ed:0:1 has its group IDs one off.
-    # A marker records storage that's known good; warn if there's no marker
-    # but image layers exist (empty storage, e.g. just created by migrate above, is fine).
-    m=~/.local/share/containers/.subgid-root-mapped
-    if [ ! -e "$m" ]; then
-        if grep -qs '"id"' ~/.local/share/containers/storage/overlay-layers/layers.json; then
-            echo "start.sh: nested podman storage predates the ed:0:1 subgid mapping;" \
-                 "run 'podman system reset' once, then 'touch $m'" >&2
-        else
-            mkdir -p "${m%/*}" && touch "$m"
-        fi
-    fi
 fi
 
 # Stage "base" has no VNC: stay up for `podman exec` until stopped (--init passes the
@@ -97,17 +85,12 @@ if [ ! -s "$vncdir/passwd" ]; then
 fi
 rm -f "$vncdir/passwd.init"
 unset VNC_PASSWORD pw
-# The session comes from the image (/usr/local/bin/vnc-session: xterm, XFCE or LXQt), so
-# a home works with any stage. Write xstartup if it's missing or is the XFCE-only one
-# older versions generated; a customised xstartup is left alone.
-xstartup_old='#!/bin/sh
-unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
-exec dbus-launch --exit-with-session startxfce4'
-xstartup_new='#!/bin/sh
-unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
-exec dbus-launch --exit-with-session /usr/local/bin/vnc-session'
-if [ ! -f "$vncdir/xstartup" ] || [ "$(cat "$vncdir/xstartup")" = "$xstartup_old" ]; then
-    printf '%s\n' "$xstartup_new" > "$vncdir/xstartup"
+# The session comes from the image (/usr/local/bin/vnc-session: an xterm or a desktop),
+# so a home works with any image. Write xstartup if it's missing; a customised one is
+# left alone.
+if [ ! -f "$vncdir/xstartup" ]; then
+    printf '%s\n' '#!/bin/sh' 'unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS' \
+        'exec dbus-launch --exit-with-session /usr/local/bin/vnc-session' > "$vncdir/xstartup"
     chmod +x "$vncdir/xstartup"
 fi
 
