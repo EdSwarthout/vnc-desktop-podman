@@ -4,8 +4,8 @@
 desktop App, its Python SDK, and an installer for its CLI (`agy`), on LXQt (with
 Google Chrome, TigerVNC/noVNC, nested podman and the CLI installers). The
 [`Containerfile`](Containerfile) here has the same stage for Ubuntu and Fedora (no
-package manager involved), built on `vnc-desktop-<distro>:lxqt` and tagged
-`vnc-desktop-<distro>:lxqt-antigravity`. It builds on amd64 and arm64: Google
+package manager involved), built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
+`vnc-desktop-<distro>:lxqt-antigravity-<version>`. It builds on amd64 and arm64: Google
 publishes the App, the CLI and the SDK's wheels for both, and it runs on an arm64 DGX
 Spark as well as on amd64.
 
@@ -13,11 +13,11 @@ Spark as well as on amd64.
 
 ```bash
 source ./env.rc
-d_target=lxqt-antigravity d_build              # builds vnc-desktop-ubuntu:lxqt first
-d_select 1; d_target=lxqt-antigravity d_run    # vnc-desktop-ubuntu-antigravity-1
+d_target=lxqt-antigravity d_build              # builds vnc-desktop-ubuntu:lxqt-2604 first
+d_select 1; d_target=lxqt-antigravity d_run    # vnc-desktop-ubuntu-lxqt-antigravity-2604-7201
 d_target=lxqt-antigravity d_vnc                # VNC 7201 (needs vncviewer)
 d_target=lxqt-antigravity d_novnc              # or noVNC on 6381, in a browser
-d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-antigravity-1, same ports
+d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-lxqt-antigravity-45-7201, same ports
 ```
 
 Keep `d_target=lxqt-antigravity` on each line (or set it in your shell or `.env`): the
@@ -25,10 +25,10 @@ instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|
-| ubuntu | `vnc-desktop-ubuntu-antigravity-N`     | 7200+N | 6380+N |
-| fedora | `vnc-desktop-fedora-antigravity-N`     | 7200+N | 6380+N |
+| ubuntu | `vnc-desktop-ubuntu-lxqt-antigravity-2604-<VNC port>` | 7200+N | 6380+N |
+| fedora | `vnc-desktop-fedora-lxqt-antigravity-45-<VNC port>` | 7200+N | 6380+N |
 
-Nested (from inside an instance) it is `<this instance>_agNu`.
+Nested (from inside an instance) it is `<this instance>_<that name>`.
 
 ## What's in it
 

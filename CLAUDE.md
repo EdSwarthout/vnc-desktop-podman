@@ -72,10 +72,13 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   then `.env` (may override `d_dir`, `d_user`, `d_distro`, `d_target`, …), then derived values.
   `d_distro` ∈ `d_images` keys; `d_target` is one of `d_stages` (`base vnc browser`:
   `<distro>/Containerfile --target <stage>`), a desktop (`<dir>/Containerfile --target
-  <distro>`, BASE `localhost/<image>:browser`; `d_dirs` maps `devtools` → `chrome`) or
-  `<desktop>-<agent>` (`<agent>/Containerfile --target <distro>`, BASE
-  `localhost/<image>:<desktop>`; agents in `d_agents`). `_d_distro` works all that out at
-  call time (`_d_cf`, `_d_stage`, `_d_parent`, `_d_base`, `_d_layer`), so
+  <distro>`, BASE `localhost/<image>:browser-<version>`; `d_dirs` maps `devtools` →
+  `chrome`) or `<desktop>-<agent>` (`<agent>/Containerfile --target <distro>`, BASE
+  `localhost/<image>:<desktop>-<version>`; agents in `d_agents`). Images are tagged
+  `<image>:<target>-<version>` (`_d_tag`; versions in `d_versions`: ubuntu 2604, debian
+  13, fedora 45, archlinux none, so `vnc-desktop-archlinux:openbox`). `_d_distro` works
+  all that out at call time (`_d_cf`, `_d_stage`, `_d_parent`, `_d_base`, `_d_layer`,
+  `_d_tag`), so
   `d_distro=fedora d_target=lxqt d_build` works; `d_build` builds `_d_parent` first, and
   `d_build`/`d_run` refuse a target that isn't in `d_targets_<distro>` (or a
   `<desktop>-<agent>` whose Containerfile has no `<distro>` stage). Functions: `d_0`,
@@ -96,8 +99,8 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   desktop "<agent text>; <desktop text>"; `d_description` overrides): **a new target or
   distro gets an entry there**. `_d_wait_ready` waits for password file + noVNC + a
   visible window; `_d_rm` is `d_rm` without asking.
-- `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser`,
-  tagged `vnc-desktop-ubuntu:devtools`): `google-chrome-canary` (wrapper like stable's),
+- `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser-2604`,
+  tagged `vnc-desktop-ubuntu:devtools-2604`): `google-chrome-canary` (wrapper like stable's),
   Openbox + xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
   (`chrome-devtools-mcp`, `@playwright/mcp`, `puppeteer-core`, `playwright-core`,
   `lighthouse`; `NODE_PATH` set), and Python's `playwright` in a venv made with
@@ -137,11 +140,11 @@ Images are `vnc-desktop-<distro>:<target>`. See `README.md` for user-facing setu
   (gitignored, never commit or print it). Usually absent inside an instance.
 
 ## Where you're probably running
-Claude Code usually runs *inside* an instance (e.g. `vnc-desktop-ubuntu-1`) with this repo on
+Claude Code usually runs *inside* an instance (e.g. `vnc-desktop-ubuntu-lxqt-2604-6901`) with this repo on
 the home volume. Every image has a nested rootless podman
 for scratch containers, but it is *not* the host's podman, and the host paths
 (`$d_dir`, the NFS apt cache) are not visible. When `$container` is set, `env.rc`
-switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_<image>[-<layer>]-N` (e.g. `vnc-desktop-ubuntu-1_vnc-desktop-debian-1`) with home `~/Containers/<that name>`,
+switches to nested paths (`d_dir=~/Containers`, instance N named `<this instance>_<image>-<tag>-<VNC port>` (e.g. `vnc-desktop-ubuntu-lxqt-2604-6901_vnc-desktop-debian-gnome-13-6951`) with home `~/Containers/<that name>`,
 the instance's `/var/cache/apt-<distro>` cache mounts, no `--hostname`), so `d_build`/`d_run` here
 build and run a nested instance in the nested podman, not a host one. Check things in the container directly (`/proc/1/environ`,
 `mountpoint /var/cache/apt-ubuntu /var/cache/apt-debian /var/cache/apt-fedora`, `~/.config/tigervnc`) and test `env.rc`
@@ -249,7 +252,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   `ping` ships without file caps (it relies on `ping_group_range`, "0 0" in the
   container), so `base` does `setcap cap_net_raw=ep /usr/bin/ping` like Ubuntu's.
 - **Fedora** (`fedora/`, Fedora 45): desktops `xfce`, `lxqt`, agents `lxqt-opencode`,
-  `lxqt-antigravity`. Instances `vnc-desktop-fedora-N`, ports 7350+N / 6530+N.
+  `lxqt-antigravity`. Instances `vnc-desktop-fedora-<target>-45-<VNC port>`, ports 7350+N / 6530+N.
   - *Package cache*: dnf5 with `keepcache=True`, `cachedir` and `system_cachedir` (the
     one root uses) = `/var/cache/apt-fedora` in `dnf.conf`, so the shared
     `apt-cache-fedora` holds rpms **and repository metadata**; `install_weak_deps=False`
@@ -379,12 +382,15 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   (`d_vnc`). `d_run` omits `--hostname` when `$container` is set (it wouldn't work).
   Without a `.env`, a nested desktop gets a copy of this instance's VNC password file.
   No seccomp or further relaxation: ask before adding any.
-- Instance N (1-49) → `<image>-N` (`vnc-desktop-ubuntu-1`, `vnc-desktop-fedora-1`): the
-  container, its hostname and its home `${d_homes0[<distro>]:-$d_dir/<image>}-N`; a
-  distro's stages and desktops share it. Devtools and agents: `<image>-<layer>-N`
-  (`vnc-desktop-ubuntu-devtools-1`, `vnc-desktop-fedora-antigravity-7`; `d_homes0` key
-  `<distro>:<layer>`). When `d_run` runs nested (`$container` set) it's
-  `<this instance>_<that name>` (e.g. `vnc-desktop-ubuntu-2_vnc-desktop-debian-1`, and
+- Instance N (1-49) → `<image>-<tag>-<VNC port>`, the tag being `<target>[-<version>]`
+  and the port worked out from N (`vnc-desktop-ubuntu-lxqt-2604-6901`,
+  `vnc-desktop-fedora-lxqt-antigravity-45-7207`, `vnc-desktop-archlinux-openbox-7051`):
+  the container, its hostname and its home `${d_homes0[<distro>]:-$d_dir}/<name>`. So
+  each target has its own instance and home; ports are per distro or layer, so two
+  targets of a distro on the same N clash (names ending alike), and `d_run_new` skips
+  an N whose VNC port ends a container's or home's name (`_d_port_used`). The user
+  still selects by N. When `d_run` runs nested (`$container` set) it's
+  `<this instance>_<that name>` (e.g. `vnc-desktop-ubuntu-lxqt-2604-6902_vnc-desktop-debian-gnome-13-6951`, and
   so on one level deeper), home `~/Containers/<that name>`, with no `--hostname`; the
   parent's name comes from `$D_NAME`, which `d_run` sets (nested instances share the
   hostname), falling back to `$HOSTNAME`. Ports: Ubuntu 6900+N (VNC) / 6080+N (noVNC),
@@ -395,7 +401,7 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   The same layer on two distros shares its ports. `d_select N` keeps only N;
   `_d_names` works out name, home and ports from the current `d_distro` and
   `d_target` in every function that needs them (via `_d_need_instance`), so
-  `d_select 1; d_distro=debian d_target=gnome d_run` is `vnc-desktop-debian-1`.
+  `d_select 1; d_distro=debian d_target=gnome d_run` is `vnc-desktop-debian-gnome-13-6951`.
 
 ## Conventions
 - `env.rc`: build podman commands as bash arrays, `echo` then run; quote
@@ -420,7 +426,7 @@ image has no package lists. Everything below uses the nested podman.
   minutes (use a long timeout, log to a file, check the exit status). Changing
   `start.sh` or anything in `base` rebuilds every later stage and all desktops on it.
 - **Run a throwaway instance**: `d_run_new` (picks a free number), then
-  `[d_distro=…] d_target=<target> d_run`. It is `<this instance>_<image>-N`, e.g. `vnc-desktop-ubuntu-20_vnc-desktop-ubuntu-1` (`$d_name`
+  `[d_distro=…] d_target=<target> d_run`. It is `<this instance>_<image>-<tag>-<VNC port>`, e.g. `vnc-desktop-ubuntu-lxqt-2604-6920_vnc-desktop-ubuntu-xfce-2604-6901` (`$d_name`
   after `d_select`), with home `~/Containers/<that>` (`$d_home`), which is directly
   readable here: copy files in and out with plain `cp` (e.g. `cp -r tests "$d_home"/`),
   no `podman cp`
@@ -433,7 +439,7 @@ image has no package lists. Everything below uses the nested podman.
   apt-get install -y …'` (Fedora: `dnf install -y …`; try packages there before editing
   the Containerfile). `xdotool` (keys, clicks, window queries) is in every image from
   `vnc` on. To query packages without an instance:
-  `podman run --rm --user root vnc-desktop-ubuntu:browser sh -c 'apt-get update -qq; apt-cache policy PKG'`,
+  `podman run --rm --user root vnc-desktop-ubuntu:browser-2604 sh -c 'apt-get update -qq; apt-cache policy PKG'`,
   or `podman run --rm --user root -v /var/cache/apt-fedora:/var/cache/apt-fedora
   --security-opt label=disable registry.fedoraproject.org/fedora:45 dnf repoquery
   --setopt=system_cachedir=/var/cache/apt-fedora PKG`.

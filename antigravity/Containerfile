@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:lxqt
+ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
 
 # Google Antigravity (agent desktop "antigravity", d_target=<desktop>-antigravity, e.g.
 # lxqt-antigravity; https://antigravity.google), on a distro's desktop stage (Chrome,

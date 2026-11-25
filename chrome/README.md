@@ -1,8 +1,8 @@
 # Automating Chrome in an instance
 
 How to drive the Chrome of an instance from outside it: from the host, or from a
-parent instance for a nested one (`vnc-desktop-ubuntu-8` →
-`vnc-desktop-ubuntu-8_vnc-desktop-ubuntu-1`). The helpers are in
+parent instance for a nested one (`vnc-desktop-ubuntu-lxqt-2604-6908` →
+`vnc-desktop-ubuntu-lxqt-2604-6908_vnc-desktop-ubuntu-lxqt-2604-6901`). The helpers are in
 [`env.rc`](env.rc) here, which the top-level `env.rc` sources. They work with every
 image from `browser` on; the [image](#the-browser-image) built from the
 [`Containerfile`](Containerfile) here adds Chrome Canary and the tools.
@@ -32,7 +32,7 @@ image from `browser` on; the [image](#the-browser-image) built from the
 source env.rc; d_select 1; d_run
 d_chrome https://example.com
 d_exec curl -s http://127.0.0.1:9222/json/list      # the open pages, as JSON
-d_chrome_mcp                                        # prints: claude mcp add chrome-vnc-desktop-ubuntu-1 -- podman exec -i vnc-desktop-ubuntu-1 …
+d_chrome_mcp                                        # prints: claude mcp add chrome-vnc-desktop-ubuntu-lxqt-2604-6901 -- podman exec -i vnc-desktop-ubuntu-lxqt-2604-6901 …
 
 # with the browser image (d_target=devtools):
 d_devtools list_pages
@@ -53,7 +53,7 @@ with `d_devtools_opts`, e.g. `d_devtools_opts=(--performanceCrux)` or `(--catego
 
 `d_target=devtools` selects [`Containerfile`](Containerfile) here: Ubuntu's `browser`
 stage (stable Chrome, TigerVNC/noVNC, nested podman, the CLI installers) plus, in its
-stage `ubuntu`, image `vnc-desktop-ubuntu:devtools`:
+stage `ubuntu`, image `vnc-desktop-ubuntu:devtools-2604`:
 
 - **Google Chrome Canary** (`google-chrome-canary`, from the apt repository that the
   stable Chrome set up), behind the same `--no-sandbox` wrapper as stable. Stable
@@ -80,8 +80,8 @@ stage `ubuntu`, image `vnc-desktop-ubuntu:devtools`:
   (video from screenshots or the display).
 
 ```bash
-d_target=devtools d_build                    # builds vnc-desktop-ubuntu:browser first
-d_select 1; d_target=devtools d_run          # vnc-desktop-ubuntu-devtools-1, VNC 7001, noVNC 6181
+d_target=devtools d_build                    # builds vnc-desktop-ubuntu:browser-2604 first
+d_select 1; d_target=devtools d_run          # vnc-desktop-ubuntu-devtools-2604-7001, VNC 7001, noVNC 6181
 d_target=devtools d_chrome_bin=google-chrome-canary d_chrome https://example.com
 d_target=devtools d_exec node my-script.js   # a Puppeteer/Playwright script in the home
 cp chrome/search_screenshot.py "$d_home"/    # the example below

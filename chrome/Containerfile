@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:browser
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # A browser-automation image (d_target=devtools): a distro's browser stage (Google Chrome
 # stable, the CLI installers, TigerVNC/noVNC, nested podman) plus Chrome Canary and tools

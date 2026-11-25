@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:gnome
+ARG BASE=localhost/vnc-desktop-ubuntu:gnome-2604
 
 # Claude desktop app (agent desktop "claude", d_target=<desktop>-claude, e.g.
 # gnome-claude), on a distro's desktop stage. One stage per distro that has it; d_build

@@ -3,18 +3,18 @@
 [OpenCode](https://opencode.ai/product), an open-source AI coding agent, as a desktop
 app and a terminal UI, on LXQt (with Google Chrome, TigerVNC/noVNC, nested podman and
 the CLI installers). Stages `ubuntu` (the `.deb`) and `fedora` (the `.rpm`) of the
-[`Containerfile`](Containerfile) here, built on `vnc-desktop-<distro>:lxqt` and tagged
-`vnc-desktop-<distro>:lxqt-opencode`. It builds on amd64 and arm64: the desktop
+[`Containerfile`](Containerfile) here, built on `vnc-desktop-<distro>:lxqt-<version>` and tagged
+`vnc-desktop-<distro>:lxqt-opencode-<version>`. It builds on amd64 and arm64: the desktop
 package's URL follows the image's architecture, and `install_opencode` installs a
 native arm64 CLI on arm64.
 
 ```bash
 source ./env.rc
-d_target=lxqt-opencode d_build              # builds vnc-desktop-ubuntu:lxqt first
-d_select 1; d_target=lxqt-opencode d_run    # vnc-desktop-ubuntu-opencode-1
+d_target=lxqt-opencode d_build              # builds vnc-desktop-ubuntu:lxqt-2604 first
+d_select 1; d_target=lxqt-opencode d_run    # vnc-desktop-ubuntu-lxqt-opencode-2604-7151
 d_target=lxqt-opencode d_vnc                # VNC 7151 (needs vncviewer)
 d_target=lxqt-opencode d_novnc              # or noVNC on 6331, in a browser
-d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: vnc-desktop-fedora-opencode-1, same ports
+d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: vnc-desktop-fedora-lxqt-opencode-45-7151, same ports
 ```
 
 Keep `d_target=lxqt-opencode` on each line (or set it in your shell or `.env`): the
@@ -22,11 +22,10 @@ instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|
-| ubuntu | `vnc-desktop-ubuntu-opencode-N`        | 7150+N | 6330+N |
-| fedora | `vnc-desktop-fedora-opencode-N`        | 7150+N | 6330+N |
+| ubuntu | `vnc-desktop-ubuntu-lxqt-opencode-2604-<VNC port>` | 7150+N | 6330+N |
+| fedora | `vnc-desktop-fedora-lxqt-opencode-45-<VNC port>` | 7150+N | 6330+N |
 
-Nested (from inside an instance) it is `<this instance>_ocNu`, so it can't clash with an
-Ubuntu child `<this instance>_Nu`.
+Nested (from inside an instance) it is `<this instance>_<that name>`.
 
 ## What's in it
 

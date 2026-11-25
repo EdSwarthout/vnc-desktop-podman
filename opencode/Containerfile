@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:lxqt
+ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
 
 # OpenCode (agent desktop "opencode", d_target=<desktop>-opencode, e.g. lxqt-opencode;
 # https://opencode.ai), on a distro's desktop stage (Chrome, the CLI installers,

@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:browser
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # MATE desktop (d_target=mate), on a distro's browser stage (Chrome, the CLI installers,
 # TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build picks the

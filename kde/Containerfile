@@ -1,4 +1,4 @@
-ARG BASE=localhost/vnc-desktop-ubuntu:browser
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # KDE Plasma desktop, X11 session (d_target=kde), on a distro's browser stage (Chrome,
 # the CLI installers, TigerVNC/noVNC, nested podman). One stage per distro that has it;

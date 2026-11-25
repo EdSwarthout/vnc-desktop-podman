@@ -4,13 +4,13 @@ ARG BASE=docker.io/library/ubuntu:26.04
 # these stages: keep them in step. The build context is the repo root (the shared
 # start.sh, nested-subids, vncserver-wrapper, cli-installers/).
 # Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
-# vnc-desktop-ubuntu:<stage>):
+# vnc-desktop-ubuntu:<stage>-2604):
 #   base    - Ubuntu + network/debug tools + nested rootless podman; headless
 #   vnc     - base + TigerVNC/noVNC, session is a bare xterm
 #   browser - vnc + Google Chrome (via the --no-sandbox wrapper) + the CLI installers
 # Desktops are built on browser from their own directories (../xfce, ../lxqt, …: stage
-# "ubuntu" there, tagged vnc-desktop-ubuntu:<desktop>), and agent desktops on a desktop
-# (../opencode, …: vnc-desktop-ubuntu:<desktop>-<agent>).
+# "ubuntu" there, tagged vnc-desktop-ubuntu:<desktop>-2604), and agent desktops on a desktop
+# (../opencode, …: vnc-desktop-ubuntu:<desktop>-<agent>-2604).
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 

@@ -53,10 +53,10 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 1. **Choose `d_dir`**, a host directory for container data, and set it in
    `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
-   - `$d_dir/vnc-desktop-<distro>-N` — each instance's home dir (Ubuntu instance 1 →
-     `$d_dir/vnc-desktop-ubuntu-1`); the agent desktops and `devtools` have their own
-     (see [Run an instance](#run-an-instance)). Set `d_homes0[debian]=…` etc. in `.env`
-     to put them elsewhere.
+   - `$d_dir/<instance name>` — each instance's home dir, named like the instance
+     (Ubuntu's `lxqt`, instance 1 → `$d_dir/vnc-desktop-ubuntu-lxqt-2604-6901`; see
+     [Run an instance](#run-an-instance)). Set `d_homes0[debian]=/some/dir` etc. in
+     `.env` to keep a distro's homes elsewhere.
    - `$d_dir/apt-cache-<distro>/archives` — downloaded packages, one cache per
      distro, meant to be shared between machines over NFS so packages are
      downloaded once. That's why they're mounted directories rather than a podman
@@ -97,7 +97,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 4. **Pull the base image and build** (from any directory):
    ```bash
    d_0        # podman pull docker.io/library/ubuntu:26.04
-   d_build    # builds vnc-desktop-ubuntu:browser, then vnc-desktop-ubuntu:xfce
+   d_build    # builds vnc-desktop-ubuntu:browser-2604, then vnc-desktop-ubuntu:lxqt-2604
    ```
    `d_distro` picks the distro (default `ubuntu`) and `d_target` what to build
    (default `lxqt`); see below. To build or run another one without editing
@@ -115,13 +115,15 @@ There are three layers, each built on the one before:
 `d_target` names any of them; `d_build` builds what it's built on first. A desktop's
 or agent's `Containerfile` has one stage per distro that has it, named after the
 distro (`FROM … AS fedora`), so a pair that isn't there is refused. Images are
-tagged `vnc-desktop-<distro>:<target>` (`vnc-desktop-ubuntu:browser`,
-`vnc-desktop-fedora:lxqt`, `vnc-desktop-ubuntu:lxqt-opencode`), so building one
-doesn't replace another, and every one is runnable with `d_run`.
+tagged `vnc-desktop-<distro>:<target>-<version>` (`vnc-desktop-ubuntu:browser-2604`,
+`vnc-desktop-fedora:lxqt-45`, `vnc-desktop-ubuntu:lxqt-opencode-2604`,
+`vnc-desktop-debian:gnome-13`; Arch Linux is rolling and has no version:
+`vnc-desktop-archlinux:openbox`), so building one doesn't replace another, and every
+one is runnable with `d_run`. The versions are `d_versions` in `env.rc`.
 
 | Target | Adds | Session | Distros |
 |--------|------|---------|---------|
-| `base`    | network/debug and development tools (compilers, Python, Node, `gh`, `fd`, `fzf`, …), editors, nested rootless podman | none: headless, use `podman exec -it vnc-desktop-ubuntu-N bash` | all |
+| `base`    | network/debug and development tools (compilers, Python, Node, `gh`, `fd`, `fzf`, …), editors, nested rootless podman | none: headless, use `podman exec -it <instance> bash` | all |
 | `vnc`     | TigerVNC server/viewer, noVNC | `xterm` | all |
 | `browser` | Google Chrome (`--no-sandbox` wrapper; Arch: Chromium), fonts (incl. CJK, emoji), the [CLI installers](#cli-installers) | `xterm` | all |
 | `xfce`    | XFCE, `xfce4-screenshooter` | XFCE | ubuntu, fedora |
@@ -185,9 +187,9 @@ Select one with `d_distro`, per command or in `.env`, together with a target tha
 distro has (the default, `lxqt`, isn't on Debian or Arch):
 ```bash
 d_distro=debian d_0                      # podman pull docker.io/library/debian:trixie
-d_distro=debian d_target=gnome d_build   # vnc-desktop-debian:gnome
+d_distro=debian d_target=gnome d_build   # vnc-desktop-debian:gnome-13
 d_select 5
-d_distro=debian d_target=gnome d_run     # vnc-desktop-debian-5, home $d_dir/vnc-desktop-debian-5
+d_distro=debian d_target=gnome d_run     # vnc-desktop-debian-gnome-13-6955, home $d_dir/vnc-desktop-debian-gnome-13-6955
 ```
 Each distro's instances have their own names, homes and ports (see [Run an
 instance](#run-an-instance)), so instance 5 of every distro can run side by side.
@@ -246,31 +248,37 @@ in the next shell. Notes:
 
 ## Run an instance
 
-Instances are numbered 1-49, separately per distro. On the host, instance N is
-named like its image, `vnc-desktop-<distro>-N`: that's the container, its hostname and
-its home `$d_dir/vnc-desktop-<distro>-N`. A distro's stages and desktops share it (a
-home works with any of them). The agent desktops and `devtools` have names, homes and
-ports of their own, `vnc-desktop-<distro>-<agent>-N`, so they can run beside the
-distro's desktops; the same agent on two distros shares its ports. Nested instances,
-run inside an instance, are named differently; see item 4 of "Inside the container".
+Instances are numbered 1-49, separately per distro. The number picks the ports; the
+name comes from the image tag and the VNC port (below). The agent desktops and
+`devtools` have ports of their own, so they can run beside the distro's desktops; the
+same agent on two distros shares its ports. Nested instances, run inside an
+instance, are named differently; see item 4 of "Inside the container".
 
-| Distro / target | Instance N (container and home under `$d_dir`) | VNC port (host) | noVNC port (host) |
-|-----------------|-------------------------------|-----------------|-------------------|
-| ubuntu          | `vnc-desktop-ubuntu-N`        | 6900+N          | 6080+N            |
-| debian          | `vnc-desktop-debian-N`        | 6950+N          | 6130+N            |
-| archlinux       | `vnc-desktop-archlinux-N`     | 7050+N          | 6230+N            |
-| fedora          | `vnc-desktop-fedora-N`        | 7350+N          | 6530+N            |
-| `devtools`      | `vnc-desktop-ubuntu-devtools-N` | 7000+N        | 6180+N            |
-| `*-opencode`    | `vnc-desktop-<distro>-opencode-N` | 7150+N      | 6330+N            |
-| `*-antigravity` | `vnc-desktop-<distro>-antigravity-N` | 7200+N   | 6380+N            |
-| `*-claude`      | `vnc-desktop-ubuntu-claude-N` | 7400+N          | 6580+N            |
+An instance is named after its image and tag, and ends in its VNC host port:
+`vnc-desktop-<distro>-<target>[-<version>]-<VNC port>`. Its container, hostname and home
+(under `$d_dir`) all have that name.
 
-So Ubuntu instance 1 is `vnc-desktop-ubuntu-1`, VNC 6901, noVNC 6081.
+| Distro / target | Instance N, e.g. | VNC port (host) | noVNC port (host) |
+|-----------------|------------------|-----------------|-------------------|
+| ubuntu          | `vnc-desktop-ubuntu-lxqt-2604-<6900+N>` | 6900+N | 6080+N |
+| debian          | `vnc-desktop-debian-gnome-13-<6950+N>`  | 6950+N | 6130+N |
+| archlinux       | `vnc-desktop-archlinux-openbox-<7050+N>` | 7050+N | 6230+N |
+| fedora          | `vnc-desktop-fedora-lxqt-45-<7350+N>`   | 7350+N | 6530+N |
+| `devtools`      | `vnc-desktop-ubuntu-devtools-2604-<7000+N>` | 7000+N | 6180+N |
+| `*-opencode`    | `vnc-desktop-ubuntu-lxqt-opencode-2604-<7150+N>` | 7150+N | 6330+N |
+| `*-antigravity` | `vnc-desktop-fedora-lxqt-antigravity-45-<7200+N>` | 7200+N | 6380+N |
+| `*-claude`      | `vnc-desktop-ubuntu-gnome-claude-2604-<7400+N>` | 7400+N | 6580+N |
+
+So Ubuntu's `lxqt`, instance 1, is `vnc-desktop-ubuntu-lxqt-2604-6901`, VNC 6901,
+noVNC 6081. Every target has its own instance and home, but the ports are per distro
+(or per `devtools`/agent row): `xfce` and `lxqt` on the same N want the same ports
+(their names end alike), so run them on different numbers. `d_run_new` skips numbers
+whose VNC port another container or home already ends in.
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` and `d_target` at the time of each command, so after `d_select 1`,
-`d_distro=debian d_target=gnome d_run` runs `vnc-desktop-debian-1`, and
-`d_target=lxqt-opencode d_vnc` connects to `vnc-desktop-ubuntu-opencode-1`.
+`d_distro=debian d_target=gnome d_run` runs `vnc-desktop-debian-gnome-13-6951`, and
+`d_target=lxqt-opencode d_vnc` connects to `vnc-desktop-ubuntu-lxqt-opencode-2604-7151`.
 
 ```bash
 d_select 1     # or d_run_new: the next number with no container and no home dir yet
@@ -362,13 +370,13 @@ which one exited.
    d_target=gnome d_run       # start it with a new home
    d_vnc                      # look at it (or tests/screenshot.sh, item 5)
    ```
-   Inside instance `vnc-desktop-ubuntu-3`, nested instance N is named
-   `vnc-desktop-ubuntu-3_<its usual name>` (`vnc-desktop-ubuntu-3_vnc-desktop-ubuntu-1`,
-   `vnc-desktop-ubuntu-3_vnc-desktop-debian-1`) and its home is
-   `~/Containers/vnc-desktop-ubuntu-3_vnc-desktop-ubuntu-1`,
+   Inside instance `vnc-desktop-ubuntu-lxqt-2604-6903`, nested instance N is named
+   `vnc-desktop-ubuntu-lxqt-2604-6903_<its usual name>`
+   (`…-6903_vnc-desktop-ubuntu-gnome-2604-6901`, `…-6903_vnc-desktop-debian-gnome-13-6951`)
+   and its home is `~/Containers/<that name>`,
    a plain directory you can read and copy files into.
    It shows that name in its VNC title and shell prompt, though `hostname`
-   still says `vnc-desktop-ubuntu-3`. It uses the same VNC password as this instance. To check
+   still says `vnc-desktop-ubuntu-lxqt-2604-6903`. It uses the same VNC password as this instance. To check
    that nested podman itself works, run `tests/tests.sh` (ok/FAIL per check).
    Remove a nested instance when you're done:
    ```bash
@@ -390,7 +398,7 @@ which one exited.
 general `sudo` (the one exception is the boot-time `nested-subids`, which
 `start.sh` runs). To add a package, put it in the `<distro>/Containerfile` (`base`
 stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
-`podman exec -u root vnc-desktop-ubuntu-N apt-get update` / `… apt-get install -y PKG` (Fedora:
+`podman exec -u root <instance> apt-get update` / `… apt-get install -y PKG` (Fedora:
 `dnf install -y PKG`; Arch: `pacman -Syu --needed PKG`; lost when the container is
 replaced). Per-user tools need no root: `pip` in a
 `python3 -m venv`, `npm install` in a project or with `--prefix ~/.local`,
@@ -403,10 +411,10 @@ In a new shell, `source env.rc` and `d_select N` before using `d_run`/`d_vnc`/`d
 
 ```bash
 podman ps                  # running instances
-podman logs vnc-desktop-ubuntu-1          # entrypoint / VNC / websockify output
-podman stop vnc-desktop-ubuntu-1          # stop
-podman start vnc-desktop-ubuntu-1         # start again (same container)
-podman exec -it vnc-desktop-ubuntu-1 bash # shell without the desktop
+podman logs vnc-desktop-ubuntu-lxqt-2604-6901          # entrypoint / VNC / websockify output
+podman stop vnc-desktop-ubuntu-lxqt-2604-6901          # stop
+podman start vnc-desktop-ubuntu-lxqt-2604-6901         # start again (same container)
+podman exec -it vnc-desktop-ubuntu-lxqt-2604-6901 bash # shell without the desktop
 ```
 
 **Change the VNC password:** delete `<home>/.config/tigervnc/passwd` on
@@ -461,13 +469,13 @@ the instance only, and `d_chrome_mcp` prints the command that lets Claude Code d
 that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_pages`).
 `d_target=devtools` is an image for this: Ubuntu's `browser` plus Chrome Canary,
 Puppeteer, Playwright (Node and Python, with `uv`), their MCP servers and Lighthouse
-(instances `vnc-desktop-ubuntu-devtools-N`, VNC 7000+N, noVNC 6180+N). See [chrome/README.md](chrome/README.md)
+(instances `vnc-desktop-ubuntu-devtools-2604-<7000+N>`, VNC 7000+N, noVNC 6180+N). See [chrome/README.md](chrome/README.md)
 for all of it and the other options.
 
 **Agent desktops:** `d_target=lxqt-opencode d_build`, then `d_select N;
 d_target=lxqt-opencode d_run` gives LXQt with OpenCode Desktop in the menu
 (Development) and `opencode` (the terminal UI) on the PATH (instances
-`vnc-desktop-ubuntu-opencode-N`); see
+`vnc-desktop-ubuntu-lxqt-opencode-2604-<7150+N>`); see
 [opencode/README.md](opencode/README.md). `lxqt-antigravity` has the Antigravity App
 and its Python SDK ([antigravity/README.md](antigravity/README.md)), and
 `gnome-claude` the Claude desktop app. Add `d_distro=fedora` for Fedora's. They build on amd64 and arm64.
