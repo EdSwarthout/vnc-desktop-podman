@@ -3,11 +3,11 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 # A browser-automation image (d_target=devtools): a distro's browser stage (Google Chrome
 # stable, the CLI installers, TigerVNC/noVNC, nested podman) plus Chrome Canary and tools
 # for driving a browser. One stage per distro that has it; d_build picks the stage named
-# like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags the image
-# vnc-desktop-<distro>:devtools. The build context is the repo root.
+# like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser[-<version>], and tags
+# the image vnc-desktop-<distro>:devtools[-<version>]. The build context is the repo root.
 #   ubuntu - browser + Google Chrome Canary, Openbox, automation tools (npm, and Python's
 #            playwright in a uv-managed venv of the user's); session is an xterm
-# See README.md here for how to drive the browsers (d_chrome, d_chrome_mcp).
+# See ../../chrome/README.md for how to drive the browsers (d_chrome, d_chrome_mcp).
 
 # ---------------------------------------------------------------------------------------
 # Stage "ubuntu"
@@ -18,6 +18,7 @@ USER root
 # (as does ENV USERID, which is what ${USERID} below expands to), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # google-chrome-canary: from Google's apt repository, which the stable Chrome's postinst
 # set up in the base (google-chrome.sources); its own postinst adds a second sources
@@ -27,7 +28,7 @@ ARG USER_UID
 #     (xdotool windowactivate needs one) and dialogs stack properly
 # scrot: tests/screenshot.sh
 # socat: relay the DevTools port (it only listens on 127.0.0.1) or a Unix socket
-# x11-utils (xwininfo, xprop) comes with the base.
+# x11-utils: xprop (used in vnc-session below) and xwininfo
 # keep list sorted
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
@@ -35,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openbox \
     scrot \
     socat \
+    x11-utils \
     && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
@@ -121,7 +123,7 @@ RUN printf '%s\n' '#!/bin/sh' \
 # UV_UNMANAGED_INSTALL: just the binaries, no changes to shell profiles and no receipt
 # in the home; to update uv, rebuild (d_build_fresh). UV_NO_CACHE: nothing left in the
 # build-time home, which the volume hides anyway.
-RUN install -d -o ${USERID} -g ${USERID} /opt/uv /opt/venv
+RUN install -d -o "${USERID}" -g "$(id -gn "${USERID}")" /opt/uv /opt/venv
 USER ${USERID}
 ENV VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/opt/uv/bin:${PATH}

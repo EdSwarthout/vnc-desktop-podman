@@ -2,8 +2,9 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # Cinnamon desktop (d_target=cinnamon), on a distro's browser stage (Chrome, the CLI
 # installers, TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build
-# picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser,
-# and tags the image vnc-desktop-<distro>:cinnamon. The build context is the repo root.
+# picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:browser[-<version>], and tags the image
+# vnc-desktop-<distro>:cinnamon[-<version>]. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + Cinnamon (cinnamon2d session)
 
 # ---------------------------------------------------------------------------------------
@@ -15,6 +16,7 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # scrot: tests/screenshot.sh
 # keep list sorted

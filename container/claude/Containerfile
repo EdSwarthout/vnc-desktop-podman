@@ -2,9 +2,10 @@ ARG BASE=localhost/vnc-desktop-ubuntu:gnome-2604
 
 # Claude desktop app (agent desktop "claude", d_target=<desktop>-claude, e.g.
 # gnome-claude), on a distro's desktop stage. One stage per distro that has it; d_build
-# picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:<desktop>,
-# and tags the image vnc-desktop-<distro>:<desktop>-claude. The build context is the
-# repo root. claude-desktop is still in beta.
+# picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:<desktop>[-<version>], and tags the image
+# vnc-desktop-<distro>:<desktop>-claude[-<version>]. The build context is the repo root.
+# claude-desktop is still in beta.
 #   ubuntu - claude-desktop from Anthropic's apt repository, with gnome-keyring
 
 # ---------------------------------------------------------------------------------------
@@ -16,6 +17,7 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # Claude desktop app, from Anthropic's apt repository. The key and the sources file go
 # where the package's own postinst puts them, so it doesn't add a second entry. With
@@ -45,12 +47,14 @@ RUN printf '%s\n' '#!/bin/sh' \
         '    [ -e "$d/Default_keyring.keyring" ] || printf "%s\n" "[keyring]" "display-name=Default keyring" \' \
         '        "ctime=0" "mtime=0" "lock-on-idle=false" "lock-after=false" > "$d/Default_keyring.keyring"' \
         '    printf Default_keyring > "$d/default"' \
-        ') fi' \
+        ')' \
+        'fi' \
         'exec /usr/bin/claude-desktop "$@"' \
         > /usr/local/bin/claude-desktop \
     && chmod +x /usr/local/bin/claude-desktop \
     && test -x /usr/bin/claude-desktop \
     && f=/usr/share/applications/com.anthropic.Claude.desktop \
-    && ! grep '^Exec=' $f | grep -v '^Exec=claude-desktop '
+    && grep -q '^Exec=claude-desktop' "$f" \
+    && ! grep '^Exec=' "$f" | grep -Eqv '^Exec=claude-desktop( |$)'
 
 USER ${USERID}

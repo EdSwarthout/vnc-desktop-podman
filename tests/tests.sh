@@ -19,8 +19,8 @@ check "podman run" podman run --rm "$alpine" sh -c 'id; cat /proc/self/uid_map'
 port() {
     podman run --rm -d --replace -p 8080:80 --name tests-nginx docker.io/library/nginx || return
     local rc=1
-    for _ in $(seq 20); do curl -sf localhost:8080 >/dev/null && break; sleep 0.5; done
-    curl -sS localhost:8080 | grep -o '<title>.*</title>' && rc=0
+    for _ in $(seq 20); do curl -sf 127.0.0.1:8080 >/dev/null && break; sleep 0.5; done
+    curl -sS 127.0.0.1:8080 | grep -o '<title>.*</title>' && rc=0
     podman stop -t 2 tests-nginx >/dev/null
     return $rc
 }

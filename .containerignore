@@ -5,6 +5,7 @@
 !LICENSE
 !container/cli-installers
 !container/nested-subids
+!container/opencode/setup-opencode.sh
 !container/start.sh
 !container/vncserver-wrapper
 !user_files

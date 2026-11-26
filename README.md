@@ -24,7 +24,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | File            | Purpose                                                       |
 |-----------------|---------------------------------------------------------------|
 | `container/`    | What the images are built from (you normally don't touch it): |
-| `container/ubuntu/`, `debian/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (see [Images](#images)) |
+| `container/deb/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (`deb/` is shared by Ubuntu and Debian; see [Images](#images)) |
 | `container/xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
 | `container/opencode/`, `antigravity/`, `claude/` | [Agent desktops](#agent-desktops): a `Containerfile` with one stage per distro, built on a desktop, and a README |
 | `container/chrome/` | `devtools`: a `Containerfile`, Ubuntu's `browser` + Chrome Canary and browser tools |
@@ -34,7 +34,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `container/nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
 | `user_files/<distro>/` | Your files for new homes (not in git; see [below](#run-an-instance)) |
 | `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`), an example script and a [README](chrome/README.md) of the options |
-| `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked) |
+| `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked), `test_env.sh` (`env.rc` unit tests) |
 | `docs/`         | [Screenshots](docs/README.md) of each desktop; [article](docs/Advantages-article.md) on the advantages |
 | `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
@@ -46,15 +46,16 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
   arm64), `podman` (rootless).
 - Optional: `vncviewer` (TigerVNC) on the host for `d_vnc`; otherwise any
   browser works via noVNC.
-- The container user is named `ed` (`d_user`) and gets the UID of whoever runs
-  `d_build`. `env.rc` sets `PODMAN_USERNS=keep-id`, which maps your host user
-  to that same UID in the container, so it owns the home dir. Build on each
-  machine (or as each user) whose UID differs. For another name, set
-  `d_user=…` in `.env` (step 2).
+- The container user defaults to your host username (`d_user=${USER:-ed}`) and gets
+  the UID and GID of whoever runs `d_build`. `env.rc` sets `PODMAN_USERNS=keep-id`,
+  which maps your host user to that same UID/GID in the container, so it owns the home
+  dir. Build on each machine (or as each user) whose UID/GID differs. For another name,
+  set `d_user=…` in `.env` (step 2).
 
 ## One-time setup
 
-1. **Choose `d_dir`**, a host directory for container data, and set it in
+1. **Choose `d_dir`**, a host directory for container data (default
+   `${XDG_DATA_HOME:-$HOME/.local/share}/vnc-desktop`), and set it in
    `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
    - `$d_dir/<instance name>` — each instance's home dir, named like the instance
@@ -84,7 +85,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 2. **Create `.env`** next to `env.rc` with the VNC password (VNC only uses
    the first 8 characters) and your `d_dir`. `env.rc` sources it, so it can
    override any of the defaults at the top of `env.rc` (`d_dir`, `d_user`,
-   `d_distro`, `d_target`, `d_aptcaches`, `d_homes0`):
+   `d_bind`, `d_distro`, `d_target`, `d_aptcaches`, `d_homes0`, `d_run_opts`):
    ```bash
    cat > .env <<'EOF'
    export VNC_PASSWORD=yourpass
@@ -105,13 +106,13 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
    ```
    `d_distro` picks the distro (default `ubuntu`) and `d_target` what to build
    (default `lxqt`); see below. To build or run another one without editing
-   `env.rc`: `d_target=lxqt d_build`, `d_distro=fedora d_target=lxqt d_run`.
+   `env.rc`: `d_target=xfce d_build`, `d_distro=fedora d_target=lxqt d_run`.
 
 ## Images
 
 There are three layers, each built on the one before:
 
-1. **The distro's stages**, in `container/<distro>/Containerfile`: `base` → `vnc` → `browser`.
+1. **The distro's stages**, in `container/<distro>/Containerfile` (`container/deb/Containerfile` for Ubuntu and Debian): `base` → `vnc` → `browser`.
 2. **A desktop**, in `container/<desktop>/Containerfile`, built on the distro's `browser`.
 3. **An agent desktop** `<desktop>-<agent>`, in `container/<agent>/Containerfile`, built on
    that desktop: `lxqt-opencode`, `lxqt-antigravity`, `gnome-opencode`,
@@ -356,8 +357,8 @@ which one exited.
   `<host>:6901` (Ubuntu instance 1).
 
 > The ports are published on all interfaces and VNC/noVNC traffic is
-> unencrypted. Use this only on a trusted LAN behind a firewall, or change
-> `d_run` to bind `127.0.0.1:` and use an SSH tunnel.
+> unencrypted. Use this only on a trusted LAN behind a firewall, or set
+> `d_bind=127.0.0.1` in `.env` and use an SSH tunnel.
 
 ## Inside the container
 
@@ -423,10 +424,10 @@ which one exited.
    full-screen PNG of the desktop and prints its path (the tool depends on the
    desktop; `d_screenshots` installs `scrot` where none is included).
 
-**No root inside.** The image is meant to carry everything needed: `ed` has no
-general `sudo` (the one exception is the boot-time `nested-subids`, which
-`start.sh` runs). To add a package, put it in `container/<distro>/Containerfile` (`base`
-stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
+**No root inside.** The image is meant to carry everything needed: the container user has
+no general `sudo` (the one exception is the boot-time `nested-subids`, which
+`start.sh` runs). To add a package, put it in `container/<distro>/Containerfile`
+(`container/deb/Containerfile` for Ubuntu/Debian, `base` stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
 `podman exec -u root <instance> apt-get update` / `… apt-get install -y PKG` (Fedora:
 `dnf install -y PKG`; Arch: `pacman -Syu --needed PKG`; lost when the container is
 replaced). Per-user tools need no root: `pip` in a

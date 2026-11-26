@@ -2,8 +2,8 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # XFCE desktop (d_target=xfce), on a distro's browser stage (Chrome, the CLI installers,
 # TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build picks the
-# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags
-# the image vnc-desktop-<distro>:xfce. The build context is the repo root.
+# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser[-<version>],
+# and tags the image vnc-desktop-<distro>:xfce[-<version>]. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + XFCE
 #   fedora - Fedora 45 + XFCE
 
@@ -16,6 +16,7 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # xfce4-screenshooter: tests/screenshot.sh uses it
 # keep list sorted
@@ -37,6 +38,7 @@ USER root
 
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # Fedora has no xfce4 metapackage: XFCE's core by name (without the weak deps, and not
 # the xfce-desktop group, which brings NetworkManager, Bluetooth, abrt, …). No

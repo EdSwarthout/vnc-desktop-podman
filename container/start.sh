@@ -27,11 +27,13 @@ export SHELL=${SHELL:-/bin/bash}
 if [ ! -f ~/.bashrc ]; then
     cp -r --update=none /etc/skel/. ~/
     mkdir -p ~/.local/bin
-    cat >> ~/.bashrc <<'EOF'
+    if ! grep -q '\.local/bin' ~/.bashrc 2>/dev/null; then
+        cat >> ~/.bashrc <<'EOF'
 if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin${PATH:+:${PATH}}"
 fi
 EOF
+    fi
     if [ -f /usr/local/share/user_files.tar ]; then
         tar -C ~ -xf /usr/local/share/user_files.tar --no-overwrite-dir \
             || echo "start.sh: unpacking user_files.tar failed" >&2
@@ -98,10 +100,14 @@ fi
 # exits — Xvnc crash, or the session ends (logging out, exiting the xterm) — stop the
 # other and exit, so the container stops instead of staying "up" with no desktop.
 # `podman logs` says which.
-trap 'stopping=1; kill $(jobs -p) 2>/dev/null' TERM INT
+_kill_jobs() {
+    local p
+    for p in $(jobs -p); do kill "$p" 2>/dev/null || true; done
+}
+trap 'stopping=1; _kill_jobs' TERM INT
 
 # -desktop: the VNC window title; a nested instance's hostname is its parent's.
-vncserver :1 -fg -desktop "${D_NAME:-$(hostname)}:1 ($(id -un))" -geometry "$VNC_RESOLUTION" -depth 24 -localhost no -SecurityTypes VncAuth &
+vncserver :1 -fg -desktop "${D_NAME:-$(hostname)}:1 ($(id -un))" -geometry "${VNC_RESOLUTION:-1440x900}" -depth 24 -localhost no -SecurityTypes VncAuth &
 vnc_pid=$!
 
 # Browser access: http://localhost:6080/vnc.html
@@ -111,7 +117,7 @@ listen=6080
 if [ -n "$(cat /proc/net/if_inet6 2>/dev/null)" ] && [ "$(cat /proc/sys/net/ipv6/bindv6only 2>/dev/null)" = 0 ]; then
     listen='[::]:6080'
 fi
-websockify --web=/usr/share/novnc "$listen" localhost:5901 &
+websockify --web=/usr/share/novnc "$listen" 127.0.0.1:5901 &
 
 rc=0
 wait -n -p done_pid || rc=$?
@@ -121,6 +127,6 @@ else
     [ "$done_pid" = "$vnc_pid" ] && what=vncserver || what=websockify
     echo "start.sh: $what exited (status $rc); stopping container" >&2
 fi
-kill $(jobs -p) 2>/dev/null || true
+_kill_jobs
 wait || true
 exit "$rc"

@@ -3,7 +3,8 @@
 Rootless-podman images over TigerVNC/noVNC, with Google Chrome (Chromium on Arch), the
 coding-agent CLI installers (Claude Code and others) and nested podman, in three layers:
 - **distros** `ubuntu` (26.04), `debian` (13 trixie), `fedora` (45), `archlinux` (rolling):
-  `container/<distro>/Containerfile`, stages `base` → `vnc` → `browser`;
+  `container/deb/Containerfile` (shared by Ubuntu and Debian via `DISTRO`/`USER_FILES_GLOB`),
+  `container/fedora/Containerfile`, `container/archlinux/Containerfile`, stages `base` → `vnc` → `browser`;
 - **desktops** on a distro's `browser`: `container/<desktop>/Containerfile`, one stage per distro
   that has it: Ubuntu xfce, lxqt, gnome (Flashback), kde, mate, cinnamon; Debian gnome
   (Shell); Fedora xfce, lxqt; Arch openbox;
@@ -21,11 +22,10 @@ its "Agent desktops" section has a table of them.
 ## Files
 Under `container/` (paths below without that prefix are relative to it, unless
 they say otherwise):
-- `ubuntu/Containerfile` — stages `base` (headless + nested rootless podman) →
-  `vnc` (TigerVNC/noVNC, xterm session) → `browser` (Chrome + `cli-installers/`).
-  The other distros' Containerfiles follow it. Package lists are kept **sorted**.
-- `debian/Containerfile` — Debian trixie, same stages; follows Ubuntu's nearly line for
-  line: **change both** when changing those stages.
+- `deb/Containerfile` — shared by Ubuntu 26.04 and Debian 13 trixie (`ARG DISTRO`,
+  `ARG USER_FILES_GLOB`), stages `base` (headless + nested rootless podman) → `vnc`
+  (TigerVNC/noVNC, xterm session) → `browser` (Chrome + `cli-installers/`). The other
+  distros' Containerfiles follow it. Package lists are kept **sorted**.
 - `fedora/Containerfile` — Fedora 45 (`registry.fedoraproject.org/fedora:45`), same
   stages with dnf: see "Fedora" in the design decisions.
 - `archlinux/Containerfile` — Arch Linux, same stages with pacman, Chromium in `browser`:
@@ -42,12 +42,12 @@ they say otherwise):
   with a `README.md` (keep the main README's agent desktop table in step).
   `opencode`: OpenCode Desktop (Electron `.deb` / `.rpm` from opencode.ai's "latest" URL,
   not GitHub's; arch `dpkg --print-architecture` for the `.deb`, `uname -m` for the
-  `.rpm`; installs to `/opt/OpenCode`; `/usr/local/bin/ai.opencode` wrapper with
-  `--no-sandbox --password-store=basic`, both `.desktop` files pointed at it), `opencode` =
-  a symlink to the bundled CLI (`/opt/OpenCode/resources/opencode-cli`). The app's own
-  updater can't install a package without root: rebuild. The app copies its CLI into the
-  home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB) and runs `opencode-cli
-  serve` from there; no switch found to stop that. `opencode/README.md`.
+  `.rpm`; installs to `/opt/OpenCode`; shared `setup-opencode.sh` installs the
+  `/usr/local/bin/ai.opencode` wrapper with `--no-sandbox --password-store=basic`, points
+  both `.desktop` files at it, and links `opencode` to `/opt/OpenCode/resources/opencode-cli`).
+  The app's own updater can't install a package without root: rebuild. The app copies its
+  CLI into the home (`~/.config/ai.opencode.desktop/cli/<ver>/`, ~240 MB) and runs
+  `opencode-cli serve` from there; no switch found to stop that. `opencode/README.md`.
   `antigravity`: one stage `app` (no package manager: the Electron tarball, version +
   execution id from the hub updater's `/releases` JSON, `ANTIGRAVITY_VERSION`/
   `ANTIGRAVITY_TGZ` override; `linux-x64`/`linux-arm` after `uname -m`; unpacked in
@@ -121,8 +121,8 @@ At the top level:
   distro gets an entry there**. `_d_wait_ready` waits for password file + noVNC + a
   visible window; `_d_rm` is `d_rm` without asking.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
-  `LICENSE`, `container/{start.sh,nested-subids,vncserver-wrapper,cli-installers}` and
-  `user_files`. **A new `COPY` source needs a `!` line here.**
+  `LICENSE`, `container/{start.sh,nested-subids,vncserver-wrapper,cli-installers,opencode/setup-opencode.sh}`
+  and `user_files`. **A new `COPY` source needs a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
   profile `~/.config/chrome-automation`) and `d_chrome_mcp` (prints the `claude mcp
@@ -135,6 +135,8 @@ At the top level:
   `--workspace=/home/<user>` (+ `d_devtools_opts`).
   `chrome/README.md` — the automation options compared, and what has been tried.
 - `tests/tests.sh` — nested-podman checks, run inside an instance.
+   `tests/test_env.sh` — fast stubbed-`podman` unit tests for `env.rc` and `chrome/env.rc`
+  (also run in `.github/workflows/ci.yml` alongside `shellcheck`).
    `tests/screenshot.sh` — full-screen PNG of `:1` via `xfce4-screenshooter` / `screengrab` / `gnome-screenshot` / `spectacle` / `scrot`; copy it out
   with `podman cp` and look at it to check a desktop by script.
    `tests/lock.sh` — sends every lock request it knows (screensaver D-Bus names,
@@ -214,9 +216,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
 - **No root for the user**: no `sudo` group or blanket rule; sudoers allows only
   `/usr/local/sbin/nested-subids ""` (no arguments). So everything needed at
   runtime goes in the `base` package list; don't add steps that need `sudo`.
-- **User and UID** are build args (`USERID`, `USER_UID`; `d_build` passes
-  `$d_user` and `id -u`), so keep-id lines up for any host user. Scripts use
-  `$USERID` / `$SUDO_USER`, not a literal `ed`.
+- **User, UID and GID** are build args (`USERID`, `USER_UID`, `USER_GID`; `d_build` passes
+  `$d_user`, `id -u`, `id -g`), so keep-id lines up for any host user. Scripts use
+  `$USERID` / `$SUDO_USER`, not a literal `ed`. `d_user` defaults to `${USER:-ed}` and
+  `d_dir` to `${XDG_DATA_HOME:-$HOME/.local/share}/vnc-desktop` (override in `.env`).
 - **Session comes from the image**: each image with a display installs
   `/usr/local/bin/vnc-session` (xterm / `startxfce4` / `startlxqt` / Flashback's parts / `startplasma-x11` / `mate-session` / `cinnamon-session-cinnamon2d` / `openbox-session`); the home's
   `xstartup` only runs it under `dbus-launch`, so a home works with any image.
@@ -372,7 +375,10 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   (`d_chrome`): no published port, clients run there via `d_exec`/`podman exec -i`.
   It needs a profile other than the default (`--user-data-dir`): since Chrome 136
   `--remote-debugging-port` is ignored on `~/.config/google-chrome`.
-- **Ports bind all interfaces** on purpose (trusted LAN). Accepted.
+- **Ports bind all interfaces** by default (trusted LAN); `d_bind=127.0.0.1` in `.env`
+  restricts `d_run` to localhost for SSH-tunnel use.
+- **Default `d_run_opts`** is `("-d" "--cap-add=NET_RAW")`; debug host-network flags
+  (`--network=pasta:-T,5201,--map-gw`) are opt-in via `.env`.
 - `PODMAN_USERNS=keep-id`; container user `ed` is UID 1001 by default, same as on the host.
 - `label=disable` (not `:z`) on mounts.
 - **Nested podman** (every image): `/etc/subuid`/`subgid` are `ed:1:1000` +
@@ -499,9 +505,11 @@ image has no package lists. Everything below uses the nested podman.
    "Agent desktops" table.
 
 ## Gotchas met so far
-- **Open**: `d_run_opts`' `--network=pasta:-T,5201,--map-gw` (order fixed for podman 4.9)
-  lets `podman run` start, but iperf3 in the instance still can't reach the parent's
-  port 5201. Not investigated yet.
+- **Open**: with optional debug `d_run_opts` `--network=pasta:-T,5201,--map-gw` (order
+  fixed for podman 4.9), `podman run` starts, but iperf3 in the instance didn't reach the
+  parent's port 5201 when tested. Note: in `pasta`, `-T 5201` forwards container loopback
+  `127.0.0.1:5201` → host `127.0.0.1:5201`, whereas `--map-gw` routes to the host's
+  non-loopback gateway IP. Not re-tested yet.
 - `[ -s FILE ]` is always false for `/proc` files (size 0): test the content.
 - `localhost` may resolve to `::1` first; a published port whose service only
   listens on IPv4 then accepts and resets. Use `127.0.0.1` in checks.

@@ -18,6 +18,7 @@ done
 
 tmp=$(mktemp -d)
 title=lock-test-$$
+# shellcheck disable=SC2016  # expanded by the inner sh inside xterm
 xterm -T "$title" -geometry 40x4+50+50 -e sh -c 'while read -r l; do echo "$l" >> "$1"; done' sh "$tmp/typed" &
 xterm_pid=$!
 trap 'kill $xterm_pid 2>/dev/null; rm -rf "$tmp"' EXIT

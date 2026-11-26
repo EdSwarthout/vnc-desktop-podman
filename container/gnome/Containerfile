@@ -2,8 +2,9 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # GNOME desktop (d_target=gnome), on a distro's browser stage (Chrome, the CLI
 # installers, TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build
-# picks the stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser,
-# and tags the image vnc-desktop-<distro>:gnome. The build context is the repo root.
+# picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:browser[-<version>], and tags the image
+# vnc-desktop-<distro>:gnome[-<version>]. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + GNOME Flashback (gnome-panel, metacity, nautilus)
 #   debian - Debian 13 + GNOME Shell (its X11 session), Debian's default desktop
 # The Claude desktop app is an agent desktop on top of this (../claude: gnome-claude).
@@ -17,12 +18,14 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # GNOME Flashback, GNOME's X11 session, not GNOME Shell: Ubuntu 26.04's GNOME Shell (50)
 # is Wayland-only and needs logind, so it can't be a session on the VNC X server.
 # gnome-session-flashback: the panel layout and Flashback's gsettings defaults (and
 # gnome-flashback, gnome-panel, metacity, nautilus as dependencies).
 # gnome-screenshot: tests/screenshot.sh
+# seahorse: Passwords and Keys GUI, for inspecting the keyring (e.g. in gnome-claude)
 # keep list sorted
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gnome-screenshot \
@@ -69,6 +72,7 @@ USER root
 
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # GNOME 48 still has an X11 session (Ubuntu 26.04's GNOME 50 doesn't; that stage is
 # Flashback). Without the recommends: no Firefox, Evolution, Software etc.

@@ -1,16 +1,17 @@
 ARG BASE=docker.io/library/ubuntu:26.04
 
-# Ubuntu 26.04 (d_distro=ubuntu, the default). The other distros' Containerfiles follow
-# these stages: keep them in step. The build context is the repo root (the shared
-# start.sh, nested-subids, vncserver-wrapper, cli-installers/).
+# Debian-family distros: Ubuntu 26.04 (d_distro=ubuntu, the default) and Debian 13 trixie
+# (d_distro=debian). d_build passes DISTRO, BASE, and USER_FILES_GLOB; standalone builds
+# default to Ubuntu 26.04. The build context is the repo root (the shared start.sh,
+# nested-subids, vncserver-wrapper, cli-installers/).
 # Stages, each runnable with d_run (d_target in env.rc picks one; the image is tagged
-# vnc-desktop-ubuntu:<stage>-2604):
-#   base    - Ubuntu + network/debug tools + nested rootless podman; headless
+# vnc-desktop-<distro>:<stage>-<version>):
+#   base    - distro + network/debug tools + nested rootless podman; headless
 #   vnc     - base + TigerVNC/noVNC, session is a bare xterm
 #   browser - vnc + Google Chrome (via the --no-sandbox wrapper) + the CLI installers
-# Desktops are built on browser from their own directories (../xfce, ../lxqt, …: stage
-# "ubuntu" there, tagged vnc-desktop-ubuntu:<desktop>-2604), and agent desktops on a desktop
-# (../opencode, …: vnc-desktop-ubuntu:<desktop>-<agent>-2604).
+# Desktops are built on browser from their own directories (../xfce, ../lxqt, ../gnome, …:
+# stage "<distro>" there, tagged vnc-desktop-<distro>:<desktop>-<version>), and agent
+# desktops on a desktop (../opencode, …: vnc-desktop-<distro>:<desktop>-<agent>-<version>).
 # Each stage with a display installs /usr/local/bin/vnc-session, which the home's
 # ~/.config/tigervnc/xstartup runs, so the session follows the image, not the home.
 
@@ -18,28 +19,34 @@ ARG BASE=docker.io/library/ubuntu:26.04
 # Stage "base": minimal image with nested rootless podman, network and debug tools
 FROM ${BASE} AS base
 
-# The container user. d_build passes d_user and the builder's UID, so that with
+# The distro name (ubuntu or debian, for /var/cache/apt-${DISTRO}) and glob for optional
+# user_files/<distro>/ (e.g. ubunt[u], debia[n]).
+ARG DISTRO=ubuntu
+ARG USER_FILES_GLOB=ubunt[u]
+
+# The container user. d_build passes d_user and the builder's UID/GID, so that with
 # PODMAN_USERNS=keep-id it is the host user and owns the home volume.
 ARG USERID=ed
 ARG USER_UID=1001
+ARG USER_GID=1001
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     USERID=${USERID}
 
-# Keep downloaded .debs: apt keeps them in /var/cache/apt-ubuntu (Dir::Cache::archives),
-# where d_build mounts the shared (NFS) ubuntu apt cache; d_run mounts both distros'
-# caches (/var/cache/apt-ubuntu, /var/cache/apt-debian), so a build nested in an
-# instance uses the right one whichever distro it is. Ubuntu's docker-clean deletes .debs
-# after every install, so drop it, but keep its other job: no
+# Keep downloaded .debs: apt keeps them in /var/cache/apt-${DISTRO} (Dir::Cache::archives),
+# where d_build mounts the shared (NFS) distro apt cache; d_run mounts every distro's
+# cache that exists (/var/cache/apt-ubuntu, /var/cache/apt-debian, …), so a build nested
+# in an instance uses the right one whichever distro it is. The base image's docker-clean
+# deletes .debs after every install, so drop it, but keep its other job: no
 # pkgcache.bin/srcpkgcache.bin (~50 MB each, rebuilt from the lists anyway). Each apt
-# RUN ends with `mountpoint -q /var/cache/apt-ubuntu || apt-get clean`, so a plain
+# RUN ends with `mountpoint -q /var/cache/apt-${DISTRO} || apt-get clean`, so a plain
 # `podman build` without the mount doesn't leave .debs in the image layers either.
-# Stop apt from changing the ownership of archives/partial
+# Stop apt from changing the ownership of archives/partial.
 RUN rm /etc/apt/apt.conf.d/docker-clean \
     && printf 'Dir::Cache::pkgcache "";\nDir::Cache::srcpkgcache "";\n' \
         > /etc/apt/apt.conf.d/docker-no-pkgcache \
-    && printf 'Dir::Cache::archives "/var/cache/apt-ubuntu/";\n' > /etc/apt/apt.conf.d/vnc-desktop-archives \
+    && printf 'Dir::Cache::archives "/var/cache/apt-%s/";\n' "${DISTRO}" > /etc/apt/apt.conf.d/vnc-desktop-archives \
     && printf 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99no-sandbox-user
 
 # Basics, network/debug and development tools, and nested rootless podman. The user
@@ -92,19 +99,20 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     xz-utils \
     zip \
     zstd \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && { mountpoint -q "/var/cache/apt-${DISTRO}" || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
-# Non-root user with a fixed UID; a user the base image ships with that UID (Ubuntu's
+# Non-root user with a fixed UID/GID; a user the base image ships with that UID (Ubuntu's
 # "ubuntu" is 1000) makes way. No general root: the only thing it may sudo is the
 # boot-time nested-subids (root-owned, and "" = without arguments), which start.sh
 # runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
 RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
     && { [ -z "$old" ] || userdel -r "$old"; } \
-    && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
-    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
-    && chmod 440 /etc/sudoers.d/${USERID} \
-    && visudo -cf /etc/sudoers.d/${USERID}
+    && { getent group "${USER_GID}" >/dev/null || groupadd -g "${USER_GID}" "${USERID}"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" -g "${USER_GID}" "${USERID}" \
+    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > "/etc/sudoers.d/${USERID}" \
+    && chmod 440 "/etc/sudoers.d/${USERID}" \
+    && visudo -cf "/etc/sudoers.d/${USERID}"
 
 # A new home's .bashrc is /etc/skel's (start.sh's first boot), which leaves ~/.local/bin to
 # .profile, and a terminal's bash isn't a login shell: add it here too, since install_claude,
@@ -117,21 +125,26 @@ RUN ! grep -q '\.local/bin' /etc/skel/.bashrc \
         'fi' >> /etc/skel/.bashrc
 
 # Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
-# useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
-# (skip the user's own; for ed, 1001: 1-1000 and 1002-65535): inner containers get root->ed plus 65534 subids. subgid also gets
-# group 0 (ed:0:1), so root in a nested build can use the shared apt cache (see
-# nested-subids). These are defaults: at every boot start.sh runs nested-subids, which
-# rewrites them from the container's actual ID map (needed one level deeper, e.g.
-# ccN_M) and re-applies the file caps below.
-RUN printf '%s:1:%d\n%s:%d:%d\n' ${USERID} $((USER_UID - 1)) ${USERID} $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
-    && { cat /etc/subuid; printf '%s:0:1\n' ${USERID}; } > /etc/subgid
+# useradd's default 165536:65536 is outside it. Use 1 to ID-1 and ID+1 to 65535 (skip the
+# user's own): inner containers get root->user plus 65534 subids. subgid also gets group 0
+# (<user>:0:1), so root in a nested build can use the shared apt cache (see nested-subids).
+# These are defaults: at every boot start.sh runs nested-subids, which rewrites them from
+# the container's actual ID map (needed one level deeper) and re-applies the file caps.
+RUN printf '%s:1:%d\n%s:%d:%d\n' "${USERID}" $((USER_UID - 1)) "${USERID}" $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
+    && printf '%s:1:%d\n%s:%d:%d\n%s:0:1\n' "${USERID}" $((USER_GID - 1)) "${USERID}" $((USER_GID + 1)) $((65535 - USER_GID)) "${USERID}" > /etc/subgid
 
 # setuid-root newuidmap runs with euid 0, which is not the owner of the new user
 # namespace, so writing uid_map needs CAP_SYS_ADMIN, which the outer container lacks
-# (EPERM). With file caps instead, euid stays ed (the owner); it only adds SETUID/SETGID.
+# (EPERM). With file caps instead, euid stays the container user (the owner); it only
+# adds SETUID/SETGID.
 RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap \
     && setcap cap_setuid=ep /usr/bin/newuidmap \
     && setcap cap_setgid=ep /usr/bin/newgidmap
+
+# ping: Debian's ships without file caps (relying on net.ipv4.ping_group_range, which is
+# "0 0" in the container), while Ubuntu's already has cap_net_raw=ep (harmless to re-set).
+# With the cap it works when the instance has NET_RAW (d_run_opts --cap-add=NET_RAW).
+RUN setcap cap_net_raw=ep /usr/bin/ping
 
 # No systemd/logind in the container: no cgroup delegation, no journald.
 # utsns = "host": the outer seccomp profile blocks sethostname without CAP_SYS_ADMIN,
@@ -152,13 +165,13 @@ COPY --chmod=755 container/nested-subids /usr/local/sbin/nested-subids
 # has one, otherwise it just waits (use `podman exec -it <name> bash`).
 COPY --chmod=755 container/start.sh /usr/local/bin/start.sh
 
-# Files for the home: user_files/ubuntu/ at the repo root (gitignored, may be absent:
-# the [u] in its COPY path is a glob, so a missing one matches nothing) is packed into
-# /usr/local/share/user_files.tar, which start.sh unpacks into a new home on its first
-# boot, over /etc/skel's copies. Changing them rebuilds every later stage. LICENSE
-# is only there because COPY fails when no source exists (a user_files/ubuntu/LICENSE
-# would be dropped). The files are in the image: no secrets, if the image is shared.
-COPY LICENSE user_files/ubunt[u] /tmp/user_files/
+# Files for the home: user_files/<distro>/ at the repo root (gitignored, may be absent:
+# USER_FILES_GLOB uses a bracket glob like ubunt[u]/debia[n], so a missing one matches
+# nothing) is packed into /usr/local/share/user_files.tar, which start.sh unpacks into a
+# new home on its first boot, over /etc/skel's copies. Changing them rebuilds every later
+# stage. LICENSE is only there because COPY fails when no source exists (a
+# user_files/<distro>/LICENSE would be dropped). No secrets, if the image is shared.
+COPY LICENSE user_files/${USER_FILES_GLOB} /tmp/user_files/
 RUN rm /tmp/user_files/LICENSE \
     && if [ -n "$(ls -A /tmp/user_files)" ]; then \
            find /tmp/user_files -mindepth 1 -maxdepth 1 -printf '%P\0' \
@@ -174,6 +187,7 @@ CMD ["/usr/local/bin/start.sh"]
 # Stage "vnc": TigerVNC server/viewer and noVNC, no desktop: the session is an xterm
 FROM base AS vnc
 USER root
+ARG DISTRO=ubuntu
 
 ENV DISPLAY=:1 \
     VNC_RESOLUTION=1440x900
@@ -190,7 +204,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     websockify \
     xdotool \
     xterm \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && { mountpoint -q "/var/cache/apt-${DISTRO}" || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # vncserver: the shared front end (../vncserver-wrapper) that runs Xtigervnc and the
@@ -209,6 +223,7 @@ EXPOSE 5901 6080
 # Stage "browser": vnc + Google Chrome + the CLI installers
 FROM vnc AS browser
 USER root
+ARG DISTRO=ubuntu
 
 # Fonts for web pages: metric-compatible Latin, CJK (else Chinese/Japanese/Korean text
 # shows as empty boxes), emoji
@@ -217,17 +232,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && { mountpoint -q "/var/cache/apt-${DISTRO}" || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Google Chrome for the image's architecture (amd64 or arm64; dpkg reports the image's,
 # also in a cross build under emulation). The .deb's postinst adds Google's apt repo + key
-# itself (../chrome/Containerfile installs google-chrome-canary from it).
+# itself (../chrome/Containerfile installs google-chrome-canary from it on Ubuntu).
 RUN curl -fsSLo /tmp/chrome.deb \
         "https://dl.google.com/linux/direct/google-chrome-stable_current_$(dpkg --print-architecture).deb" \
     && apt-get update && apt-get install -y /tmp/chrome.deb \
     && rm -f /tmp/chrome.deb \
-    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && { mountpoint -q "/var/cache/apt-${DISTRO}" || apt-get clean; } \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Chrome needs these flags in a container (no user-namespace sandbox).

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: ShellCheck
+        run: |
+          shellcheck -s bash \
+            env.rc \
+            chrome/env.rc \
+            container/start.sh \
+            container/vncserver-wrapper \
+            container/nested-subids \
+            container/cli-installers/* \
+            tests/tests.sh \
+            tests/screenshot.sh \
+            tests/lock.sh \
+            tests/test_env.sh
+          shellcheck -s sh container/opencode/setup-opencode.sh
+
+      - name: Unit test env.rc and chrome/env.rc (stubbed podman)
+        run: bash tests/test_env.sh

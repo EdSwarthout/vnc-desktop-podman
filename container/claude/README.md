@@ -50,8 +50,8 @@ Nested (from inside an instance) it is `<this instance>_<that name>`.
 ## Updating
 
 The app comes from the apt repository at build time, and the user has no root in the
-instance, so rebuild to update: `d_target=gnome-claude d_build`, then `d_run`. The
-home is kept.
+instance, so rebuild without cache to update: `d_target=gnome-claude d_build_fresh`
+(or `d_build --no-cache`), then `d_run`. The home is kept.
 
 ## Starting it from a script
 

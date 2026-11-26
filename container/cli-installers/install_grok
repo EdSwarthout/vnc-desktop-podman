@@ -10,6 +10,6 @@ set -ex
 export SHELL="${SHELL:-$(getent passwd "$(id -u)" | cut -d: -f7)}"
 curl -fsSL https://x.ai/cli/install.sh | bash -s -- "$@"
 rm -f "$HOME/.grok/bin/agent"
-if [ "$(readlink "$HOME/.local/bin/agent")" = "$HOME/.grok/bin/agent" ]; then
+if [ -L "$HOME/.local/bin/agent" ] && [ "$(readlink "$HOME/.local/bin/agent")" = "$HOME/.grok/bin/agent" ]; then
     rm -f "$HOME/.local/bin/agent"
 fi

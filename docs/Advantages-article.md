@@ -2,8 +2,8 @@
 
 I wanted a place where a coding agent can do anything it needs — browse, build, run
 containers, click around a GUI — without being able to touch my real machine. So I
-built vnc-desktop-podman: an Ubuntu 26.04 desktop in a rootless podman container,
-reachable over VNC or a browser tab.
+built vnc-desktop-podman: Linux desktops (Ubuntu 26.04, Debian 13, Fedora 45, and Arch
+Linux) in rootless podman containers, reachable over VNC or a browser tab.
 
 Here is what I like about it.
 
@@ -13,17 +13,20 @@ The container is rootless podman on the host, and the user inside has no sudo.
 Everything the desktop needs is baked into the image. If the agent goes wrong, the
 blast radius is one home directory.
 
-## 2. Six desktops from one Containerfile
+## 2. Four distros, seven desktops, and ready-to-use agent desktops
 
-XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE and Cinnamon are all stages of the same
-file, plus a headless stage and a bare-xterm one. Pick one with a single variable. Each
-desktop gets its own instance and home, named after its image and port
-(`vnc-desktop-ubuntu-lxqt-2604-6901`), so trying another desktop leaves your setup alone.
+Each distro builds `base → vnc → browser`, and modular per-desktop Containerfiles layer
+on top: XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE, and Cinnamon on Ubuntu; GNOME
+Shell on Debian; XFCE and LXQt on Fedora; Openbox on Arch Linux — plus agent desktops
+(OpenCode, Google Antigravity, and Claude Desktop) and a Chrome DevTools automation
+image. Pick any combination with `d_distro` and `d_target`. Each instance gets its own
+name, ports, and home directory (`vnc-desktop-ubuntu-lxqt-2604-6901`), so trying another
+desktop or distro leaves your setup alone.
 
 ## 3. Your home survives rebuilds
 
 Each instance keeps its home on the host as a volume. Rebuild the image as often as
-you like: browser profile, settings and the Claude Code install stay put.
+you like: browser profile, settings, and coding-agent CLIs stay put.
 
 ## 4. Containers inside the container
 
@@ -47,14 +50,17 @@ command each.
 
 The VNC password never sits in the container's environment. Screen locking is off
 everywhere, because a user with no password could never unlock it. Logging out stops
-the container. A shared apt cache keeps rebuilds fast.
+the container. Per-distro package caches (shareable over NFS) keep rebuilds fast.
 
 ## What it is not
 
-VNC traffic is unencrypted and the ports listen on all interfaces, so this is for a
-trusted LAN or behind an SSH tunnel, not the open internet.
+VNC traffic is unencrypted and the ports listen on all interfaces by default, so this
+is for a trusted LAN or behind an SSH tunnel (`d_bind=127.0.0.1` in `.env`), not the
+open internet.
 
-Chrome and Claude Code are included; the GNOME stage also has the Claude desktop app,
-which is still in beta.
+Google Chrome (Chromium on Arch) and installers for coding-agent CLIs (Claude Code,
+Antigravity, OpenCode, Grok, T3 Code) are included in every `browser` image; dedicated
+agent desktops add OpenCode Desktop, the Google Antigravity App + Python SDK, and the
+beta Claude desktop app.
 
 Apache 2.0, on GitHub: <https://github.com/EdSwarthout/vnc-desktop-podman>

@@ -4,15 +4,16 @@
 # user may sudo, and only without arguments. -n: only print (needs no root).
 #
 # - /etc/subuid, /etc/subgid: one range per extent of /proc/self/{uid,gid}_map, minus 0
-#   and ed's own ID. The kernel rejects a subid range that spans two extents of the
-#   parent's map, and how many IDs there are and where the extents split depend on how
-#   this container was started (host -> ccN differs from ccN -> ccN_M), so the
-#   build-time defaults in the Containerfile only fit the first level.
-# - /etc/subgid also gets this container's group 0 (ed:0:1). Without it, root in a
+#   and the container user's own ID. The kernel rejects a subid range that spans two
+#   extents of the parent's map, and how many IDs there are and where the extents split
+#   depend on how this container was started (host -> instance differs from instance ->
+#   nested instance), so the build-time defaults in the Containerfile only fit the first
+#   level.
+# - /etc/subgid also gets this container's group 0 (<user>:0:1). Without it, root in a
 #   nested build can't write to the shared apt cache: apt keeps archives/partial as
 #   _apt:root mode 700, and root may only override permissions on files whose owner
-#   and group are both mapped. Here group 0 is ed's group one level up. It is a
-#   deliberate, small grant: ed has no other root access in the container (sudo is
+#   and group are both mapped. Here group 0 is the user's group one level up. It is a
+#   deliberate, small grant: the user has no other root access in the container (sudo is
 #   limited to this script), but can reach this container's gid 0 through a nested
 #   container. Podman sorts the ranges, so it becomes nested gid 1 and
 #   the other nested gids sit one higher than without it: nested storage created
@@ -45,7 +46,7 @@ for kind in uid gid; do
         printf '/etc/sub%s:\n%s\n' $kind "$new"
     elif [ "$new" != "$(cat /etc/sub$kind 2>/dev/null)" ]; then
         printf '%s\n' "$new" > /etc/sub$kind
-        echo "nested-subids: /etc/sub$kind set to: $(echo $new)" >&2
+        echo "nested-subids: /etc/sub$kind set to: ${new//$'\n'/ }" >&2
     fi
 done
 

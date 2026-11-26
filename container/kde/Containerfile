@@ -3,8 +3,8 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 # KDE Plasma desktop, X11 session (d_target=kde), on a distro's browser stage (Chrome,
 # the CLI installers, TigerVNC/noVNC, nested podman). One stage per distro that has it;
 # d_build picks the stage named like d_distro, with
-# BASE=localhost/vnc-desktop-<distro>:browser, and tags the image
-# vnc-desktop-<distro>:kde. The build context is the repo root.
+# BASE=localhost/vnc-desktop-<distro>:browser[-<version>], and tags the image
+# vnc-desktop-<distro>:kde[-<version>]. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + KDE Plasma (X11)
 
 # ---------------------------------------------------------------------------------------
@@ -16,6 +16,7 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # plasma-session-x11 + kwin-x11: Plasma's X11 session (the default one is Wayland).
 # kde-spectacle: tests/screenshot.sh

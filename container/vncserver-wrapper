@@ -16,7 +16,9 @@ args=() desktop=
 while [ $# -gt 0 ]; do
     case $1 in
         -fg) ;;
-        -desktop) desktop=${2:-}; args+=("$1" "${2:-}"); shift ;;
+        -desktop)
+            [ $# -ge 2 ] || { echo "vncserver: -desktop needs an argument" >&2; exit 2; }
+            desktop=$2; args+=("$1" "$2"); shift ;;
         -localhost)
             case ${2:-} in
                 no|0) args+=(-localhost=0); shift ;;
@@ -32,10 +34,14 @@ vncdir=~/.config/tigervnc
 xvnc=$(command -v Xtigervnc || command -v Xvnc) || { echo "vncserver: no Xtigervnc or Xvnc" >&2; exit 1; }
 
 # /tmp may be an empty tmpfs; a lock left by `podman restart` would block the display
-mkdir -p -m 1777 /tmp/.X11-unix
+mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n"
 
-trap 'kill $(jobs -p) 2>/dev/null' TERM INT
+_kill_jobs() {
+    local p
+    for p in $(jobs -p); do kill "$p" 2>/dev/null || true; done
+}
+trap '_kill_jobs' TERM INT
 "$xvnc" "$disp" -rfbport $((5900 + n)) -rfbauth "$vncdir/passwd" -nolisten tcp "${args[@]}" &
 xpid=$!
 until [ -S "/tmp/.X11-unix/X$n" ]; do
@@ -53,6 +59,6 @@ done
 
 rc=0
 wait -n || rc=$?
-kill $(jobs -p) 2>/dev/null
+_kill_jobs
 wait
 exit "$rc"

@@ -1,7 +1,7 @@
-ARG BASE=docker.io/archlinux:latest
+ARG BASE=docker.io/library/archlinux:latest
 
 # Arch Linux (rolling). https://archlinux.org/
-# Same layering as ../debian/Containerfile, whose stages this follows (keep them in
+# Same layering as ../deb/Containerfile, whose stages this follows (keep them in
 # step); the browser is Chromium (Google Chrome is AUR-only).
 # Build with d_distro=archlinux; the context is the repo root (the shared start.sh,
 # nested-subids, vncserver-wrapper, cli-installers/).
@@ -19,10 +19,11 @@ ARG BASE=docker.io/archlinux:latest
 # Stage "base": minimal image with nested rootless podman, network and debug tools
 FROM ${BASE} AS base
 
-# The container user. d_build passes d_user and the builder's UID, so that with
+# The container user. d_build passes d_user and the builder's UID/GID, so that with
 # PODMAN_USERNS=keep-id it is the host user and owns the home volume.
 ARG USERID=ed
 ARG USER_UID=1001
+ARG USER_GID=1001
 
 ENV LANG=C.UTF-8 \
     USERID=${USERID}
@@ -58,7 +59,9 @@ RUN pacman -Syu --noconfirm --needed \
     catatonit \
     curl \
     emacs-nox \
+    fd \
     fuse-overlayfs \
+    fzf \
     git \
     github-cli \
     gnupg \
@@ -89,29 +92,31 @@ RUN pacman -Syu --noconfirm --needed \
     wget \
     xz \
     zip \
+    zstd \
     && { mountpoint -q /var/cache/apt-archlinux || rm -rf /var/cache/apt-archlinux/*; } \
     && rm -rf /var/lib/pacman/sync/*
 
-# Non-root user with a fixed UID; a user the base image ships with that UID makes way
-# (Arch's has none; kept in step with Debian's). No general root: the only thing it
-# may sudo is the boot-time nested-subids (root-owned, and "" = without arguments),
+# Non-root user with a fixed UID/GID; a user the base image ships with that UID makes way
+# (Arch's has none; kept in step with deb/Containerfile). No general root: the only thing
+# it may sudo is the boot-time nested-subids (root-owned, and "" = without arguments),
 # which start.sh runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
 RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
     && { [ -z "$old" ] || userdel -r "$old"; } \
-    && useradd -m -s /bin/bash -u "${USER_UID}" ${USERID} \
-    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > /etc/sudoers.d/${USERID} \
-    && chmod 440 /etc/sudoers.d/${USERID} \
-    && visudo -cf /etc/sudoers.d/${USERID}
+    && { getent group "${USER_GID}" >/dev/null || groupadd -g "${USER_GID}" "${USERID}"; } \
+    && useradd -m -s /bin/bash -u "${USER_UID}" -g "${USER_GID}" "${USERID}" \
+    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > "/etc/sudoers.d/${USERID}" \
+    && chmod 440 "/etc/sudoers.d/${USERID}" \
+    && visudo -cf "/etc/sudoers.d/${USERID}"
 
 # Subordinate IDs must fit inside the 65536 UIDs the outer (rootless) container has;
-# useradd's default ed:165536:65536 is outside it. Use 1 to UID-1 and UID+1 to 65535
-# (skip the user's own; for ed, 1001: 1-1000 and 1002-65535): inner containers get root->ed plus 65534 subids. subgid also gets
-# group 0 (ed:0:1), so root in a nested build can use a shared package cache (see
+# useradd's default 165536:65536 is outside it. Use 1 to ID-1 and ID+1 to 65535 (skip the
+# user's own): inner containers get root->user plus 65534 subids. subgid also gets group 0
+# (<user>:0:1), so root in a nested build can use a shared package cache (see
 # nested-subids). These are defaults: at every boot start.sh runs nested-subids, which
-# rewrites them from the container's actual ID map (needed one level deeper, e.g.
-# ccN_M) and re-applies the file caps below.
-RUN printf '%s:1:%d\n%s:%d:%d\n' ${USERID} $((USER_UID - 1)) ${USERID} $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
-    && { cat /etc/subuid; printf '%s:0:1\n' ${USERID}; } > /etc/subgid
+# rewrites them from the container's actual ID map (needed one level deeper) and
+# re-applies the file caps below.
+RUN printf '%s:1:%d\n%s:%d:%d\n' "${USERID}" $((USER_UID - 1)) "${USERID}" $((USER_UID + 1)) $((65535 - USER_UID)) > /etc/subuid \
+    && printf '%s:1:%d\n%s:%d:%d\n%s:0:1\n' "${USERID}" $((USER_GID - 1)) "${USERID}" $((USER_GID + 1)) $((65535 - USER_GID)) "${USERID}" > /etc/subgid
 
 # setuid-root newuidmap runs with euid 0, which is not the owner of the new user
 # namespace, so writing uid_map needs CAP_SYS_ADMIN, which the outer container lacks

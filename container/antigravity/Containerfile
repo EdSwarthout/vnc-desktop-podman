@@ -5,8 +5,8 @@ ARG BASE=localhost/vnc-desktop-ubuntu:lxqt-2604
 # desktop stage (Chrome, the CLI installers incl. install_agy, TigerVNC/noVNC, nested
 # podman): the Antigravity desktop app and its Python SDK. One stage per distro that has
 # it; d_build picks the stage named like d_distro, with
-# BASE=localhost/vnc-desktop-<distro>:<desktop>, and tags the image
-# vnc-desktop-<distro>:<desktop>-antigravity. The build context is the repo root.
+# BASE=localhost/vnc-desktop-<distro>:<desktop>[-<version>], and tags the image
+# vnc-desktop-<distro>:<desktop>-antigravity[-<version>]. The build context is the repo root.
 #   ubuntu, fedora - Antigravity App (Electron tarball) and Python SDK: the same for both
 #            (no package manager involved), so both are the stage "app" under their name
 # See README.md here.
@@ -20,6 +20,7 @@ USER root
 # (as does ENV USERID, which is what ${USERID} below expands to), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # Antigravity App: Google's Linux tarball, unpacked in /opt/Antigravity. The updater
 # service's /releases lists versions newest first with the build ("execution") id that
@@ -80,7 +81,7 @@ RUN printf '#!/bin/sh\nexec /opt/Antigravity/antigravity --no-sandbox --password
 # /usr/bin/python3 is untouched. UV_UNMANAGED_INSTALL: just the binaries, no changes to
 # shell profiles; to update uv, rebuild. UV_NO_CACHE: nothing left in the build-time home.
 ARG ANTIGRAVITY_SDK_VERSION=
-RUN install -d -o ${USERID} -g ${USERID} /opt/uv /opt/venv
+RUN install -d -o "${USERID}" -g "$(id -gn "${USERID}")" /opt/uv /opt/venv
 USER ${USERID}
 ENV VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/opt/uv/bin:${PATH}

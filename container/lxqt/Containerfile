@@ -2,8 +2,8 @@ ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
 
 # LXQt desktop (d_target=lxqt), on a distro's browser stage (Chrome, the CLI installers,
 # TigerVNC/noVNC, nested podman). One stage per distro that has it; d_build picks the
-# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser, and tags
-# the image vnc-desktop-<distro>:lxqt. The build context is the repo root.
+# stage named like d_distro, with BASE=localhost/vnc-desktop-<distro>:browser[-<version>],
+# and tags the image vnc-desktop-<distro>:lxqt[-<version>]. The build context is the repo root.
 #   ubuntu - Ubuntu 26.04 + LXQt
 #   fedora - Fedora 45 + LXQt
 
@@ -16,6 +16,7 @@ USER root
 # (as does ENV USERID), so they're unused here.
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # Not pulled in without recommends: breeze-icon-theme (LXQt's default icon theme; else
 # the panel and desktop have no icons), libxcb-cursor0 (Qt 6's xcb platform plugin won't
@@ -56,6 +57,7 @@ USER root
 
 ARG USERID
 ARG USER_UID
+ARG USER_GID
 
 # Fedora has no lxqt-core: LXQt's parts by name (without the weak deps, so no SDDM,
 # NetworkManager applet, Falkon, … of the lxqt-desktop group). breeze-icon-theme:
