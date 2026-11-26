@@ -77,6 +77,12 @@ they say otherwise):
   either does, so the container stops; otherwise (`base`) `exec sleep infinity`.
 - `nested-subids` — `/usr/local/sbin`; `start.sh` runs it via `sudo` at every
   boot to fit subids and `newuidmap` caps to the container.
+- `vnc-pkg` — `/usr/local/sbin/vnc-pkg` (sudo-allowed) with a `/usr/local/bin/vnc-pkg`
+  wrapper: `vnc-pkg {upgrade|install PKG...|remove PKG...}` for repo packages across
+  apt, dnf and pacman (rejects flags, paths, URLs; respects the shared package cache and
+  cleans lists/metadata). After each change it drops privileges (`setpriv`) and writes
+  `~/.config/vnc-desktop/{pkg.log,commit-requested}` so the parent can run `d_commit` /
+  `d_commit_watch`.
 - `chrome/Containerfile` — `d_target=devtools` (stage `ubuntu`, on `vnc-desktop-ubuntu:browser-2604`,
   tagged `vnc-desktop-ubuntu:devtools-2604`): `google-chrome-canary` (wrapper like stable's),
   Openbox + xterm session, `scrot`, `socat`, `ffmpeg`, and global npm tools
@@ -121,7 +127,7 @@ At the top level:
   distro gets an entry there**. `_d_wait_ready` waits for password file + noVNC + a
   visible window; `_d_rm` is `d_rm` without asking.
 - `.containerignore` — `d_build`'s context is the repo root; this allow-list sends only
-  `LICENSE`, `container/{start.sh,nested-subids,vncserver-wrapper,cli-installers,opencode/setup-opencode.sh}`
+  `LICENSE`, `container/{start.sh,nested-subids,vnc-pkg,vncserver-wrapper,cli-installers,opencode/setup-opencode.sh}`
   and `user_files`. **A new `COPY` source needs a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome [URL...]` (Chrome on the
   instance's desktop with the DevTools port, 127.0.0.1:9222 inside the instance,
@@ -213,9 +219,9 @@ The user builds, runs and pushes from the host. This clone has an `origin`
   or nested without `$VNC_PASSWORD` copies this instance's `passwd`;
   `start.sh` converts and deletes it, and unsets a `$VNC_PASSWORD` given by a
   plain `podman run -e`.
-- **No root for the user**: no `sudo` group or blanket rule; sudoers allows only
-  `/usr/local/sbin/nested-subids ""` (no arguments). So everything needed at
-  runtime goes in the `base` package list; don't add steps that need `sudo`.
+- **No general root for the user**: no `sudo` group or blanket rule; sudoers allows
+  only `/usr/local/sbin/nested-subids ""` (no arguments) and `/usr/local/sbin/vnc-pkg`
+  (strictly validated repo package upgrade/install/remove). `sudo -n true` stays refused.
 - **User, UID and GID** are build args (`USERID`, `USER_UID`, `USER_GID`; `d_build` passes
   `$d_user`, `id -u`, `id -g`), so keep-id lines up for any host user. Scripts use
   `$USERID` / `$SUDO_USER`, not a literal `ed`. `d_user` defaults to `${USER:-ed}` and

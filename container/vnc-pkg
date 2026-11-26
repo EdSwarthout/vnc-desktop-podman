@@ -1,0 +1,155 @@
+#!/bin/bash
+# vnc-pkg {upgrade | install PKG... | remove PKG...}
+# Root-owned package helper installed at /usr/local/sbin/vnc-pkg and allowed via sudoers
+# (called through /usr/local/bin/vnc-pkg). Lets the non-root container user manage repo
+# packages across Ubuntu/Debian (apt), Fedora (dnf), and Arch Linux (pacman) without
+# granting general sudo, while respecting the shared package cache and keeping image
+# metadata clean for `podman commit`.
+#
+# After a successful change, logs the action to ~/.config/vnc-desktop/pkg.log and touches
+# ~/.config/vnc-desktop/commit-requested (dropping privileges to the invoking user first)
+# so the host/parent can commit the updated container image (`d_commit` / `d_commit_watch`).
+set -euo pipefail
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export DEBIAN_FRONTEND=noninteractive
+
+usage() {
+    cat >&2 <<'EOF'
+usage: vnc-pkg upgrade
+       vnc-pkg install PKG [PKG...]
+       vnc-pkg remove  PKG [PKG...]
+EOF
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+cmd=$1
+shift
+
+case $cmd in
+    -h|--help) usage ;;
+    upgrade)
+        [ $# -eq 0 ] || { echo "vnc-pkg: upgrade takes no arguments" >&2; exit 2; }
+        ;;
+    install|remove)
+        [ $# -ge 1 ] || { echo "vnc-pkg: $cmd requires at least one package name" >&2; exit 2; }
+        # Allow only repository package names (optional :arch suffix for apt). Reject
+        # leading '-', '/', URLs, local package files, and option injection.
+        for pkg in "$@"; do
+            if [[ ! $pkg =~ ^[a-zA-Z0-9][a-zA-Z0-9.+_-]*(:[a-z0-9]+)?$ ]]; then
+                echo "vnc-pkg: invalid package name '$pkg'" >&2
+                exit 2
+            fi
+        done
+        ;;
+    *)
+        echo "vnc-pkg: unknown command '$cmd'" >&2
+        usage
+        ;;
+esac
+
+# Test mode: validate arguments only (used by unit tests without root/package manager).
+if [ "${VNC_PKG_DRY_RUN:-}" = 1 ]; then
+    echo "dry-run: $cmd $*"
+    exit 0
+fi
+
+# Self-elevate if invoked directly as non-root (e.g. when /usr/local/sbin precedes
+# /usr/local/bin on PATH, as in `podman exec`).
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo -n /usr/local/sbin/vnc-pkg "$cmd" "$@"
+fi
+
+# Detect distro/package manager and its shared cache mountpoint.
+distro_id=
+if [ -r /etc/os-release ]; then
+    # shellcheck source=/dev/null
+    distro_id=$(. /etc/os-release && printf '%s' "${ID:-}")
+fi
+
+if command -v apt-get >/dev/null; then
+    pm=apt
+    cache="/var/cache/apt-${distro_id:-ubuntu}"
+elif command -v dnf >/dev/null; then
+    pm=dnf
+    cache=/var/cache/apt-fedora
+elif command -v pacman >/dev/null; then
+    pm=pacman
+    cache=/var/cache/apt-archlinux
+else
+    echo "vnc-pkg: no supported package manager (apt-get, dnf, pacman)" >&2
+    exit 1
+fi
+
+cleanup() {
+    case $pm in
+        apt)
+            mountpoint -q "$cache" || apt-get clean >/dev/null 2>&1 || true
+            rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+            ;;
+        dnf)
+            mountpoint -q "$cache" || dnf clean all >/dev/null 2>&1 || true
+            ;;
+        pacman)
+            mountpoint -q "$cache" || rm -rf /var/cache/apt-archlinux/*
+            rm -rf /var/lib/pacman/sync/*
+            ;;
+    esac
+}
+trap cleanup EXIT
+
+case "$pm:$cmd" in
+    apt:upgrade)
+        apt-get update
+        apt-get upgrade -y
+        ;;
+    apt:install)
+        apt-get update
+        apt-get install -y --no-install-recommends -- "$@"
+        ;;
+    apt:remove)
+        apt-get remove -y -- "$@"
+        apt-get autoremove -y
+        ;;
+    dnf:upgrade)
+        dnf -y upgrade
+        ;;
+    dnf:install)
+        dnf -y install -- "$@"
+        ;;
+    dnf:remove)
+        dnf -y remove -- "$@"
+        ;;
+    pacman:upgrade)
+        pacman -Syu --noconfirm
+        ;;
+    pacman:install)
+        # Always -Syu, never -Sy: Arch does not support partial upgrades.
+        pacman -Syu --noconfirm --needed -- "$@"
+        ;;
+    pacman:remove)
+        pacman -Rs --noconfirm -- "$@"
+        ;;
+esac
+
+# Notify the parent/host via the shared home volume (drop root privileges before touching
+# anything in the user's home so symlinks cannot be abused to write outside $HOME).
+user=${SUDO_USER:-${USERID:-}}
+if [ -n "$user" ] && [ "$user" != root ] && id "$user" >/dev/null 2>&1; then
+    home=$(getent passwd "$user" | cut -d: -f6)
+    uid=$(id -u "$user")
+    gid=$(id -g "$user")
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    entry="$ts $cmd${*:+ $*}"
+    if [ -d "$home" ]; then
+        # shellcheck disable=SC2016  # $1/$2 expand in the inner sh -c
+        if setpriv --reuid="$uid" --regid="$gid" --init-groups \
+            sh -c 'mkdir -p "$1/.config/vnc-desktop" && printf "%s\n" "$2" >> "$1/.config/vnc-desktop/pkg.log" && printf "%s\n" "$2" > "$1/.config/vnc-desktop/commit-requested"' \
+            sh "$home" "$entry"; then
+            echo "vnc-pkg: recorded in ~/.config/vnc-desktop/commit-requested (on host: d_commit)"
+        else
+            echo "vnc-pkg: warning: could not write commit-requested marker" >&2
+        fi
+    fi
+fi

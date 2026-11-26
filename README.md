@@ -30,6 +30,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `container/chrome/` | `devtools`: a `Containerfile`, Ubuntu's `browser` + Chrome Canary and browser tools |
 | `container/cli-installers/` | `install_claude`, `install_agy`, `install_opencode`, `install_grok`, `install_t3code`, in every `browser` stage (see [CLI installers](#cli-installers)) |
 | `container/start.sh` | Container entrypoint (all images): first-boot setup, starts the VNC session if the stage has one |
+| `container/vnc-pkg` | `/usr/local/sbin/vnc-pkg` (sudo-allowed) + `/usr/local/bin/vnc-pkg` wrapper: upgrade, install, or remove repo packages inside an instance |
 | `container/vncserver-wrapper` | `/usr/local/bin/vncserver` in every `vnc` stage: runs the VNC X server and the session in the foreground |
 | `container/nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
 | `user_files/<distro>/` | Your files for new homes (not in git; see [below](#run-an-instance)) |
@@ -424,13 +425,30 @@ which one exited.
    full-screen PNG of the desktop and prints its path (the tool depends on the
    desktop; `d_screenshots` installs `scrot` where none is included).
 
-**No root inside.** The image is meant to carry everything needed: the container user has
-no general `sudo` (the one exception is the boot-time `nested-subids`, which
-`start.sh` runs). To add a package, put it in `container/<distro>/Containerfile`
-(`container/deb/Containerfile` for Ubuntu/Debian, `base` stage list) and `d_build`, then `d_run`. For a one-off as root, from the host:
-`podman exec -u root <instance> apt-get update` / `… apt-get install -y PKG` (Fedora:
-`dnf install -y PKG`; Arch: `pacman -Syu --needed PKG`; lost when the container is
-replaced). Per-user tools need no root: `pip` in a
+**No general root inside.** The container user has no general `sudo`; sudoers allows
+only the boot-time `nested-subids` and `/usr/local/sbin/vnc-pkg` (invoked as `vnc-pkg`).
+To install, remove, or upgrade repository packages from inside the instance (using the
+shared package cache and cleaning package metadata afterwards):
+```bash
+vnc-pkg install htop           # apt (Ubuntu/Debian), dnf (Fedora), or pacman (Arch)
+vnc-pkg remove htop
+vnc-pkg upgrade
+```
+`vnc-pkg` only accepts repository package names (no flags, local files, or URLs). Changes
+live in the container's writable layer and are lost if the container is replaced with
+`d_run`, unless you commit the container on the host or add the package to the
+`Containerfile` and rebuild. After each change, `vnc-pkg` logs to
+`~/.config/vnc-desktop/pkg.log` and writes `~/.config/vnc-desktop/commit-requested` in the
+shared home directory so the host can commit the updated image:
+```bash
+# On the host (or parent instance):
+d_commit                       # commits selected container to its image tag ($_d_image:$_d_tag)
+d_commit :lxqt-custom          # or save to a separate tag
+d_commit_watch                 # optional: auto-commit whenever commit-requested appears
+```
+For permanent images, fold the packages from `~/.config/vnc-desktop/pkg.log` into
+`container/<distro>/Containerfile` (`container/deb/Containerfile` for Ubuntu/Debian) and
+rebuild with `d_build`. Per-user tools need no root at all: `pip` in a
 `python3 -m venv`, `npm install` in a project or with `--prefix ~/.local`,
 and containers in the nested podman.
 

@@ -195,5 +195,51 @@ else
     fail "aarch64 archlinux" "got: $out"
 fi
 
+# 9. d_commit commits selected container and clears commit-requested marker
+mkdir -p "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop"
+printf '2026-11-26T00:00:00Z install htop\n' > "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-requested"
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/commit'; d_select 1; d_commit")
+if grep -Fq -- '[podman commit --pause=false vnc-desktop-ubuntu-lxqt-2604-6901 vnc-desktop-ubuntu:lxqt-2604]' <<< "$out" \
+   && [ ! -e "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-requested" ] \
+   && grep -Fq 'vnc-desktop-ubuntu:lxqt-2604 (2026-11-26T00:00:00Z install htop)' "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-done"; then
+    pass "d_commit commits image, clears commit-requested, writes commit-done"
+else
+    fail "d_commit default" "got: $out"
+fi
+
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/commit'; d_select 1; d_commit :lxqt-snap")
+if grep -Fq -- 'vnc-desktop-ubuntu:lxqt-snap]' <<< "$out"; then
+    pass "d_commit supports :tag shorthand"
+else
+    fail "d_commit :tag" "got: $out"
+fi
+
+# 10. container/vnc-pkg argument validation (dry-run mode)
+if [ "$(VNC_PKG_DRY_RUN=1 bash "$repo/container/vnc-pkg" upgrade)" = "dry-run: upgrade " ] \
+   && [ "$(VNC_PKG_DRY_RUN=1 bash "$repo/container/vnc-pkg" install htop gcc-c++ libc6:amd64)" = "dry-run: install htop gcc-c++ libc6:amd64" ] \
+   && [ "$(VNC_PKG_DRY_RUN=1 bash "$repo/container/vnc-pkg" remove htop)" = "dry-run: remove htop" ]; then
+    pass "vnc-pkg accepts valid upgrade/install/remove invocations"
+else
+    fail "vnc-pkg valid args" "unexpected dry-run output"
+fi
+
+bad_ok=1
+for bad in \
+    "upgrade extra" \
+    "install" \
+    "remove" \
+    "install -oAPT::Update::Pre-Invoke::=id" \
+    "install /tmp/evil.deb" \
+    "install https://example.com/a.rpm" \
+    "install foo;id" \
+    "shell"; do
+    # shellcheck disable=SC2086  # intentional word splitting of test cases
+    if VNC_PKG_DRY_RUN=1 bash "$repo/container/vnc-pkg" $bad >/dev/null 2>&1; then
+        fail "vnc-pkg reject" "should have rejected: $bad"
+        bad_ok=0
+    fi
+done
+[ "$bad_ok" -eq 1 ] && pass "vnc-pkg rejects invalid commands, flags, paths, and URLs"
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]

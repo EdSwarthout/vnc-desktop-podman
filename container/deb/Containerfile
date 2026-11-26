@@ -103,14 +103,16 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
 
 # Non-root user with a fixed UID/GID; a user the base image ships with that UID (Ubuntu's
-# "ubuntu" is 1000) makes way. No general root: the only thing it may sudo is the
-# boot-time nested-subids (root-owned, and "" = without arguments), which start.sh
-# runs. Add packages here and rebuild, or use `podman exec -u root` from outside.
+# "ubuntu" is 1000) makes way. No general root: sudoers allows only the boot-time
+# nested-subids (no arguments) and /usr/local/sbin/vnc-pkg (repo package management).
 RUN old=$(getent passwd "${USER_UID}" | cut -d: -f1) \
     && { [ -z "$old" ] || userdel -r "$old"; } \
     && { getent group "${USER_GID}" >/dev/null || groupadd -g "${USER_GID}" "${USERID}"; } \
     && useradd -m -s /bin/bash -u "${USER_UID}" -g "${USER_GID}" "${USERID}" \
-    && echo "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" > "/etc/sudoers.d/${USERID}" \
+    && printf '%s\n' \
+        "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/nested-subids \"\"" \
+        "${USERID} ALL=(root) NOPASSWD: /usr/local/sbin/vnc-pkg" \
+        > "/etc/sudoers.d/${USERID}" \
     && chmod 440 "/etc/sudoers.d/${USERID}" \
     && visudo -cf "/etc/sudoers.d/${USERID}"
 
@@ -160,6 +162,12 @@ RUN mkdir -p /etc/containers/containers.conf.d && printf '%s\n' \
         > /etc/containers/containers.conf.d/nested.conf
 
 COPY --chmod=755 container/nested-subids /usr/local/sbin/nested-subids
+COPY --chmod=755 container/vnc-pkg /usr/local/sbin/vnc-pkg
+RUN printf '%s\n' '#!/bin/sh' \
+        'if [ "$(id -u)" -eq 0 ]; then exec /usr/local/sbin/vnc-pkg "$@"; fi' \
+        'exec sudo -n /usr/local/sbin/vnc-pkg "$@"' \
+        > /usr/local/bin/vnc-pkg \
+    && chmod 755 /usr/local/bin/vnc-pkg
 
 # start.sh: first-boot home setup and nested-subids; then the VNC session if the stage
 # has one, otherwise it just waits (use `podman exec -it <name> bash`).

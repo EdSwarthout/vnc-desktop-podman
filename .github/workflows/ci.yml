@@ -17,6 +17,7 @@ jobs:
             env.rc \
             chrome/env.rc \
             container/start.sh \
+            container/vnc-pkg \
             container/vncserver-wrapper \
             container/nested-subids \
             container/cli-installers/* \
