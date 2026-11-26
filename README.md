@@ -419,7 +419,7 @@ which one exited.
    ("Resource temporarily unavailable"). The limit is set when the instance is
    created, from the host.
    `podman unshare rm -rf` is needed on the host to delete an instance's
-   `.local/share/containers`. How the nesting is set up is described in `CLAUDE.md`.
+   `.local/share/containers`. How the nesting is set up is described in `AGENTS.md`.
 
 5. **Screenshots** (any desktop stage): `tests/screenshot.sh [FILE.png]` saves a
    full-screen PNG of the desktop and prints its path (the tool depends on the
