@@ -23,6 +23,8 @@ run_env() {
             case ${1:-} in
                 container) return 1 ;;   # container exists -> false by default
                 ps) return 0 ;;
+                # image exists: true only for the images listed in $STUB_IMAGES
+                image) [ "${2:-}" != exists ] || [[ " ${STUB_IMAGES:-} " == *" ${3:-} "* ]] ;;
             esac
         }
         export -f podman
@@ -199,10 +201,10 @@ fi
 mkdir -p "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop"
 printf '2026-11-26T00:00:00Z install htop\n' > "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-requested"
 out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/commit'; d_select 1; d_commit")
-if grep -Fq -- '[podman commit --pause=false vnc-desktop-ubuntu-lxqt-2604-6901 vnc-desktop-ubuntu:lxqt-2604]' <<< "$out" \
+if grep -Fq -- '[podman commit --pause=false vnc-desktop-ubuntu-lxqt-2604-6901 vnc-desktop-ubuntu:lxqt-2604-6901]' <<< "$out" \
    && [ ! -e "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-requested" ] \
-   && grep -Fq 'vnc-desktop-ubuntu:lxqt-2604 (2026-11-26T00:00:00Z install htop)' "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-done"; then
-    pass "d_commit commits image, clears commit-requested, writes commit-done"
+   && grep -Fq 'vnc-desktop-ubuntu:lxqt-2604-6901 (2026-11-26T00:00:00Z install htop)' "$tmp/commit/vnc-desktop-ubuntu-lxqt-2604-6901/.config/vnc-desktop/commit-done"; then
+    pass "d_commit commits to the instance tag, clears commit-requested, writes commit-done"
 else
     fail "d_commit default" "got: $out"
 fi
@@ -212,6 +214,27 @@ if grep -Fq -- 'vnc-desktop-ubuntu:lxqt-snap]' <<< "$out"; then
     pass "d_commit supports :tag shorthand"
 else
     fail "d_commit :tag" "got: $out"
+fi
+
+# d_run and d_run_cmd start the committed image when it exists, the built one otherwise
+ci=vnc-desktop-ubuntu:lxqt-2604-6901
+out=$(run_env "VNC_PASSWORD=x STUB_IMAGES='$ci' container=; source '$repo/env.rc'; d_dir='$tmp/commit2'; d_select 1; d_run; d_run_cmd true" 2>&1)
+if [ "$(grep -c -- " $ci" <<< "$out")" -ge 2 ] && grep -Fq 'd_run: using committed image' <<< "$out"; then
+    pass "d_run/d_run_cmd prefer the instance's committed image"
+else
+    fail "d_run committed image" "got: $out"
+fi
+out=$(run_env "VNC_PASSWORD=x STUB_IMAGES='$ci' container=; source '$repo/env.rc'; d_dir='$tmp/commit3'; d_select 1; d_use_commit=0 d_run" 2>&1)
+if grep -q -- ' vnc-desktop-ubuntu:lxqt-2604$' <<< "$out" && ! grep -Fq -- "$ci" <<< "$out"; then
+    pass "d_use_commit=0 starts the built image"
+else
+    fail "d_use_commit=0" "got: $out"
+fi
+out=$(run_env "STUB_IMAGES='$ci' container=; source '$repo/env.rc'; d_dir='$tmp/commit4'; d_select 1; d_uncommit; d_rm -f" 2>&1)
+if grep -Fq -- "[podman untag $ci]" <<< "$out" && grep -Fq "removed vnc-desktop-ubuntu-lxqt-2604-6901 and image $ci" <<< "$out"; then
+    pass "d_uncommit and d_rm remove the committed image"
+else
+    fail "d_uncommit/d_rm" "got: $out"
 fi
 
 # 10. container/vnc-pkg argument validation (dry-run mode)

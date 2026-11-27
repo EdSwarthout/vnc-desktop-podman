@@ -442,10 +442,17 @@ live in the container's writable layer and are lost if the container is replaced
 shared home directory so the host can commit the updated image:
 ```bash
 # On the host (or parent instance):
-d_commit                       # commits selected container to its image tag ($_d_image:$_d_tag)
-d_commit :lxqt-custom          # or save to a separate tag
+d_commit                       # commit the selected instance to its own tag ($d_commit_image)
+d_commit :lxqt-custom          # or snapshot to another tag (d_run doesn't use that one)
 d_commit_watch                 # optional: auto-commit whenever commit-requested appears
+d_uncommit                     # untag the instance's committed image: d_run starts the built one
 ```
+The default tag is the instance's own, `<image>:<tag>-<VNC port>` (e.g.
+`vnc-desktop-ubuntu:lxqt-2604-6901`), and `d_run` starts it instead of the built image when
+it exists. The built image is never changed, so other instances of the target, a
+`d_build`, and desktops or agent desktops built on it don't see the packages. A rebuild
+doesn't reach a committed image either: `d_run` warns when the built image is newer, and
+`d_uncommit` goes back to it. `d_rm` removes the committed image with the instance.
 For permanent images, fold the packages from `~/.config/vnc-desktop/pkg.log` into
 `container/<distro>/Containerfile` (`container/deb/Containerfile` for Ubuntu/Debian) and
 rebuild with `d_build`. Per-user tools need no root at all: `pip` in a
@@ -527,7 +534,7 @@ d_target=lxqt-opencode d_run` gives LXQt with OpenCode Desktop in the menu
 `lxqt-antigravity`, `gnome-opencode`, `gnome-antigravity` and `gnome-claude`; see
 [Agent desktops](#agent-desktops).
 
-**Remove an instance:** `d_rm [N]` removes the container **and deletes its home
+**Remove an instance:** `d_rm [N]` removes the container (and its `d_commit` image, if any) **and deletes its home
 directory** (it asks first; `d_rm -f` doesn't). Default: the selected instance.
 
 **Rebuild after editing the Containerfile:** `d_build`, then `d_select N` and

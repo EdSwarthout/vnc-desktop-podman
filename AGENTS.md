@@ -21,7 +21,8 @@ the top level has user-facing files (`env.rc`, `.env`, `README.md`, `docs/`, `te
 
 ## On-demand skills (`.agents/skills/`)
 Detailed procedural runbooks live in `.agents/skills/` (discovered automatically by
-Antigravity and OpenCode; read directly if using an agent that doesn't auto-load them):
+Antigravity and OpenCode, and by Claude Code through the `.claude/skills` symlink; read
+directly if using an agent that doesn't auto-load them):
 - `.agents/skills/nested-testing/SKILL.md` — building, running, screenshotting, and testing
   changes inside a nested podman instance.
 - `.agents/skills/add-desktop/SKILL.md` — checklist for adding a distro desktop or a new
@@ -73,11 +74,16 @@ Under `container/` (build context is always the repo root):
   `vnc-pkg {upgrade|install PKG...|remove PKG...}` for repo packages across apt/dnf/pacman;
   strict package-name validation, cleans cache/lists, drops root via `setpriv` to write
   `~/.config/vnc-desktop/{pkg.log,commit-requested}` for `d_commit` / `d_commit_watch`.
+  `d_commit` writes the instance's own tag `<image>:<tag>-<VNC port>` (`$d_commit_image`),
+  never the built `<image>:<tag>`: `d_run`/`d_run_cmd` start it when it exists (warning
+  when the built image is newer), `d_uncommit` and `d_rm` remove it, `d_test` and
+  `d_screenshots` ignore it (`d_use_commit=0`). Desktops and agents build on the built
+  images only. Open issues: `TODO.md`.
 
 Top-level files:
 - `env.rc` — host/nested bash helpers (`d_0`, `d_build`, `d_build_fresh`, `d_select`,
   `d_run_new`, `d_run`, `d_run_cmd`, `d_vnc`, `d_novnc`, `d_logs`, `d_commit`,
-  `d_commit_watch`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`). Maps
+  `d_commit_watch`, `d_uncommit`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`). Maps
   `ubuntu`/`debian` → `deb/` and `devtools` → `chrome/` via `d_dirs`. Labels every built
   image with `org.opencontainers.image.description` from `d_desc_distros`/`d_descs` (**add
   new distros/targets there**).
@@ -186,7 +192,7 @@ See `.agents/skills/nested-testing/SKILL.md` for full testing commands.
 - **Open (pasta debug)**: with optional `d_run_opts` `--network=pasta:-T,5201,--map-gw`
   (put `-T` before `--map-gw` on podman 4.9), `iperf3` to parent 5201 wasn't working when
   tested (`-T 5201` maps container `127.0.0.1:5201` → host `127.0.0.1:5201`; `--map-gw`
-  routes to the host's non-loopback gateway IP).
+  routes to the host's non-loopback gateway IP).  See `TODO.md`.
 - `[ -s FILE ]` is always false on `/proc` files (size 0): read content instead.
 - `localhost` may resolve to `::1` first; use `127.0.0.1` for IPv4 checks/connections.
 - `pgrep NAME` matches only the first 15 chars; use `pgrep -f` for longer names.
