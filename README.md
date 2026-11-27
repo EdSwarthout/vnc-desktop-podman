@@ -211,6 +211,26 @@ They build on amd64 and arm64. `gnome-claude` is Ubuntu only, as the app is stil
 beta; it gives a new home a passwordless keyring for the app's secrets (not
 encrypted), see its README.
 
+#### Prebuilt images (GHCR)
+
+The [Release Images](.github/workflows/release-images.yml) workflow builds and publishes
+multi-arch (`amd64` and `arm64`) Podman images to GitHub Container Registry:
+
+- `ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604`
+- `ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-claude-2604`
+
+To pull and use one with `env.rc`:
+
+```bash
+podman pull ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604
+podman tag ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604 localhost/vnc-desktop-ubuntu:gnome-antigravity-2604
+```
+
+Prebuilt images use the Containerfile default user `ed` (`1001:1001`). On a host whose
+user has a different UID/GID, either pass `--userns=keep-id:uid=1001,gid=1001` (Podman
+4.3+, and set `d_user=ed` in `.env` so the home mounts at `/home/ed`) or build locally
+with `d_build`.
+
 ### Distros
 
 Select one with `d_distro`, per command or in `.env`, together with a target that

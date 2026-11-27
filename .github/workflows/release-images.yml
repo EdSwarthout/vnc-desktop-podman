@@ -1,0 +1,397 @@
+name: Release Images
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      userid:
+        description: Container username (USERID build arg)
+        type: string
+        default: ed
+      user_uid:
+        description: Container user UID (USER_UID build arg)
+        type: string
+        default: "1001"
+      user_gid:
+        description: Container user GID (USER_GID build arg)
+        type: string
+        default: "1001"
+      antigravity_version:
+        description: Optional Antigravity App version (empty = latest)
+        type: string
+        default: ""
+      push:
+        description: Push images and multi-arch manifests to GHCR (uncheck for dry-run build + smoke test)
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-images
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            uname_m: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            uname_m: aarch64
+    env:
+      ARCH: ${{ matrix.arch }}
+      EXPECT_UNAME_M: ${{ matrix.uname_m }}
+      SHOULD_PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate inputs and resolve metadata
+        env:
+          INPUT_USERID: ${{ inputs.userid }}
+          INPUT_USER_UID: ${{ inputs.user_uid }}
+          INPUT_USER_GID: ${{ inputs.user_gid }}
+          INPUT_ANTIGRAVITY_VERSION: ${{ inputs.antigravity_version }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          userid=${INPUT_USERID:-ed}
+          user_uid=${INPUT_USER_UID:-1001}
+          user_gid=${INPUT_USER_GID:-1001}
+          antigravity_version=${INPUT_ANTIGRAVITY_VERSION:-}
+
+          [[ $userid =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "Invalid userid: $userid" >&2; exit 1; }
+          [[ $user_uid =~ ^[1-9][0-9]*$ ]] && [ "$user_uid" -le 65534 ] || { echo "Invalid user_uid: $user_uid" >&2; exit 1; }
+          [[ $user_gid =~ ^[1-9][0-9]*$ ]] && [ "$user_gid" -le 65534 ] || { echo "Invalid user_gid: $user_gid" >&2; exit 1; }
+          [[ $antigravity_version =~ ^[0-9A-Za-z._-]*$ ]] || { echo "Invalid antigravity_version: $antigravity_version" >&2; exit 1; }
+
+          image_repo="ghcr.io/${REPO_OWNER,,}/vnc-desktop-ubuntu"
+          created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          image_version=${RELEASE_TAG:-${GITHUB_SHA:0:12}}
+
+          distro_ver=$(bash -c 'source ./env.rc && printf "%s" "${d_versions[ubuntu]}"')
+          desc_antigravity=$(bash -c 'source ./env.rc && d_distro=ubuntu && d_target=gnome-antigravity && _d_distro && printf "%s: %s" "${d_desc_distros[$d_distro]}" "$(_d_desc)"')
+          desc_claude=$(bash -c 'source ./env.rc && d_distro=ubuntu && d_target=gnome-claude && _d_distro && printf "%s: %s" "${d_desc_distros[$d_distro]}" "$(_d_desc)"')
+
+          {
+            printf 'USERID=%s\n' "$userid"
+            printf 'USER_UID=%s\n' "$user_uid"
+            printf 'USER_GID=%s\n' "$user_gid"
+            printf 'ANTIGRAVITY_VERSION=%s\n' "$antigravity_version"
+            printf 'IMAGE_REPO=%s\n' "$image_repo"
+            printf 'CREATED=%s\n' "$created"
+            printf 'IMAGE_VERSION=%s\n' "$image_version"
+            printf 'DISTRO_VER=%s\n' "$distro_ver"
+            printf 'TAG_ANTIGRAVITY=gnome-antigravity-%s\n' "$distro_ver"
+            printf 'TAG_CLAUDE=gnome-claude-%s\n' "$distro_ver"
+            printf 'DESC_ANTIGRAVITY=%s\n' "$desc_antigravity"
+            printf 'DESC_CLAUDE=%s\n' "$desc_claude"
+          } >> "$GITHUB_ENV"
+
+          echo "Repo: $image_repo"
+          echo "User: $userid ($user_uid:$user_gid)"
+          echo "Tags: gnome-antigravity-$distro_ver, gnome-claude-$distro_ver"
+          echo "Version label: $image_version"
+
+      - name: Free disk space if needed
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df --output=avail / | tail -n 1 | tr -d ' ')
+          if [ "$avail_kb" -lt $((25 * 1024 * 1024)) ]; then
+            echo "Available space < 25 GiB; reclaiming preinstalled tool caches"
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+            df -h /
+          fi
+
+      - name: Ensure Podman is installed
+        run: |
+          set -euo pipefail
+          if ! command -v podman >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends podman
+          fi
+          podman --version
+          uname -m
+
+      - name: Build shared Ubuntu browser and GNOME stages
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/apt-cache-ubuntu
+
+          sudo podman build --pull=always \
+            -t "localhost/vnc-desktop-ubuntu:browser-${DISTRO_VER}" \
+            -f container/deb/Containerfile --target browser \
+            --build-arg BASE=docker.io/library/ubuntu:26.04 \
+            --build-arg DISTRO=ubuntu \
+            --build-arg 'USER_FILES_GLOB=ubunt[u]' \
+            --build-arg "USERID=${USERID}" \
+            --build-arg "USER_UID=${USER_UID}" \
+            --build-arg "USER_GID=${USER_GID}" \
+            --security-opt label=disable \
+            -v /tmp/apt-cache-ubuntu:/var/cache/apt-ubuntu \
+            .
+
+          sudo podman build \
+            -t "localhost/vnc-desktop-ubuntu:gnome-${DISTRO_VER}" \
+            -f container/gnome/Containerfile --target ubuntu \
+            --build-arg "BASE=localhost/vnc-desktop-ubuntu:browser-${DISTRO_VER}" \
+            --build-arg "USERID=${USERID}" \
+            --build-arg "USER_UID=${USER_UID}" \
+            --build-arg "USER_GID=${USER_GID}" \
+            --security-opt label=disable \
+            -v /tmp/apt-cache-ubuntu:/var/cache/apt-ubuntu \
+            .
+
+      - name: Build gnome-antigravity and gnome-claude images
+        run: |
+          set -euo pipefail
+          common_labels=(
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}"
+            --label "org.opencontainers.image.url=https://github.com/${GITHUB_REPOSITORY}"
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}"
+            --label "org.opencontainers.image.created=${CREATED}"
+            --label "org.opencontainers.image.licenses=Apache-2.0"
+            --label "org.opencontainers.image.version=${IMAGE_VERSION}"
+          )
+
+          ag_args=()
+          if [ -n "${ANTIGRAVITY_VERSION:-}" ]; then
+            ag_args+=(--build-arg "ANTIGRAVITY_VERSION=${ANTIGRAVITY_VERSION}")
+          fi
+
+          sudo podman build \
+            -t "localhost/vnc-desktop-ubuntu:${TAG_ANTIGRAVITY}" \
+            -f container/antigravity/Containerfile --target ubuntu \
+            --build-arg "BASE=localhost/vnc-desktop-ubuntu:gnome-${DISTRO_VER}" \
+            --build-arg "USERID=${USERID}" \
+            --build-arg "USER_UID=${USER_UID}" \
+            --build-arg "USER_GID=${USER_GID}" \
+            "${ag_args[@]}" \
+            "${common_labels[@]}" \
+            --label "org.opencontainers.image.title=vnc-desktop-ubuntu:${TAG_ANTIGRAVITY}" \
+            --label "org.opencontainers.image.description=${DESC_ANTIGRAVITY}" \
+            --security-opt label=disable \
+            -v /tmp/apt-cache-ubuntu:/var/cache/apt-ubuntu \
+            .
+
+          sudo podman build \
+            -t "localhost/vnc-desktop-ubuntu:${TAG_CLAUDE}" \
+            -f container/claude/Containerfile --target ubuntu \
+            --build-arg "BASE=localhost/vnc-desktop-ubuntu:gnome-${DISTRO_VER}" \
+            --build-arg "USERID=${USERID}" \
+            --build-arg "USER_UID=${USER_UID}" \
+            --build-arg "USER_GID=${USER_GID}" \
+            "${common_labels[@]}" \
+            --label "org.opencontainers.image.title=vnc-desktop-ubuntu:${TAG_CLAUDE}" \
+            --label "org.opencontainers.image.description=${DESC_CLAUDE}" \
+            --security-opt label=disable \
+            -v /tmp/apt-cache-ubuntu:/var/cache/apt-ubuntu \
+            .
+
+      - name: Smoke test built images
+        run: |
+          set -euo pipefail
+
+          check_common() {
+            local img=$1 expected_desc=$2
+            echo "=== Smoke testing ${img}"
+            sudo podman run --rm --entrypoint /bin/bash \
+              -e "EXPECT_USER=${USERID}" \
+              -e "EXPECT_UID=${USER_UID}" \
+              -e "EXPECT_GID=${USER_GID}" \
+              -e "EXPECT_ARCH=${EXPECT_UNAME_M}" \
+              "$img" -c '
+                set -euo pipefail
+                [ "$(id -un)" = "$EXPECT_USER" ]
+                [ "$(id -u)" = "$EXPECT_UID" ]
+                [ "$(id -g)" = "$EXPECT_GID" ]
+                [ "$(uname -m)" = "$EXPECT_ARCH" ]
+                if sudo -n true 2>/dev/null; then
+                  echo "FAIL: sudo -n true unexpectedly succeeded" >&2
+                  exit 1
+                fi
+                [ ! -e /usr/local/share/user_files.tar ]
+                for bin in /usr/local/bin/start.sh /usr/local/bin/vncserver /usr/local/bin/vnc-session \
+                           /usr/local/bin/google-chrome-stable /usr/local/bin/vnc-pkg \
+                           /usr/local/bin/install_claude /usr/local/bin/install_agy; do
+                  test -x "$bin"
+                done
+              '
+            local src desc
+            src=$(sudo podman image inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "$img")
+            desc=$(sudo podman image inspect -f '{{index .Config.Labels "org.opencontainers.image.description"}}' "$img")
+            [ "$src" = "https://github.com/${GITHUB_REPOSITORY}" ]
+            [ "$desc" = "$expected_desc" ]
+          }
+
+          check_common "localhost/vnc-desktop-ubuntu:${TAG_ANTIGRAVITY}" "$DESC_ANTIGRAVITY"
+          sudo podman run --rm --entrypoint /bin/bash "localhost/vnc-desktop-ubuntu:${TAG_ANTIGRAVITY}" -c '
+            set -euo pipefail
+            test -x /usr/local/bin/antigravity
+            test -x /opt/Antigravity/antigravity
+            python3 -c "from google.antigravity import Agent, LocalAgentConfig"
+          '
+
+          check_common "localhost/vnc-desktop-ubuntu:${TAG_CLAUDE}" "$DESC_CLAUDE"
+          sudo podman run --rm --entrypoint /bin/bash "localhost/vnc-desktop-ubuntu:${TAG_CLAUDE}" -c '
+            set -euo pipefail
+            test -x /usr/local/bin/claude-desktop
+            test -x /usr/bin/claude-desktop
+            command -v gnome-keyring-daemon >/dev/null
+          '
+
+      - name: Push arch-specific images to GHCR
+        if: env.SHOULD_PUSH == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p digests
+          printf '%s\n' "$GITHUB_TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+          for tag in "$TAG_ANTIGRAVITY" "$TAG_CLAUDE"; do
+            echo "=== Pushing ${IMAGE_REPO}:${tag}-${ARCH}"
+            sudo podman push --format oci \
+              --digestfile "digests/${tag}.digest" \
+              "localhost/vnc-desktop-ubuntu:${tag}" \
+              "docker://${IMAGE_REPO}:${tag}-${ARCH}"
+            printf '%s  %s\n' "$(cat "digests/${tag}.digest")" "${IMAGE_REPO}:${tag}-${ARCH}"
+          done
+
+      - name: Upload image digests
+        if: env.SHOULD_PUSH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: digests/*.digest
+          retention-days: 1
+
+  manifest:
+    name: Publish Multi-Arch Manifests
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || inputs.push
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download amd64 digests
+        uses: actions/download-artifact@v8
+        with:
+          name: digests-amd64
+          path: digests/amd64
+
+      - name: Download arm64 digests
+        uses: actions/download-artifact@v8
+        with:
+          name: digests-arm64
+          path: digests/arm64
+
+      - name: Ensure Podman is installed
+        run: |
+          set -euo pipefail
+          if ! command -v podman >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends podman
+          fi
+          podman --version
+
+      - name: Create and push multi-arch OCI manifests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_USERID: ${{ inputs.userid }}
+          INPUT_USER_UID: ${{ inputs.user_uid }}
+          INPUT_USER_GID: ${{ inputs.user_gid }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          userid=${INPUT_USERID:-ed}
+          user_uid=${INPUT_USER_UID:-1001}
+          user_gid=${INPUT_USER_GID:-1001}
+          image_repo="ghcr.io/${REPO_OWNER,,}/vnc-desktop-ubuntu"
+          distro_ver=$(bash -c 'source ./env.rc && printf "%s" "${d_versions[ubuntu]}"')
+          tag_antigravity="gnome-antigravity-${distro_ver}"
+          tag_claude="gnome-claude-${distro_ver}"
+          desc_antigravity=$(bash -c 'source ./env.rc && d_distro=ubuntu && d_target=gnome-antigravity && _d_distro && printf "%s: %s" "${d_desc_distros[$d_distro]}" "$(_d_desc)"')
+          desc_claude=$(bash -c 'source ./env.rc && d_distro=ubuntu && d_target=gnome-claude && _d_distro && printf "%s: %s" "${d_desc_distros[$d_distro]}" "$(_d_desc)"')
+
+          printf '%s\n' "$GITHUB_TOKEN" | sudo podman login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+          declare -A descs=(
+            ["$tag_antigravity"]="$desc_antigravity"
+            ["$tag_claude"]="$desc_claude"
+          )
+
+          {
+            echo "## Published Multi-Arch Podman Images"
+            echo ""
+            echo "- **Registry:** \`${image_repo}\`"
+            echo "- **Container user:** \`${userid}\` (\`${user_uid}:${user_gid}\`)"
+            echo "- **Commit:** \`${GITHUB_SHA}\`"
+            echo ""
+            echo "| Tag | Manifest Digest | amd64 Digest | arm64 Digest |"
+            echo "|-----|-----------------|--------------|--------------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for tag in "$tag_antigravity" "$tag_claude"; do
+            amd64_digest=$(tr -d '[:space:]' < "digests/amd64/${tag}.digest")
+            arm64_digest=$(tr -d '[:space:]' < "digests/arm64/${tag}.digest")
+            local_list="localhost/${tag}"
+
+            echo "=== Creating multi-arch manifest ${image_repo}:${tag}"
+            sudo podman manifest rm "$local_list" 2>/dev/null || true
+            sudo podman manifest create "$local_list"
+            sudo podman manifest add "$local_list" "docker://${image_repo}@${amd64_digest}"
+            sudo podman manifest add "$local_list" "docker://${image_repo}@${arm64_digest}"
+
+            if sudo podman manifest annotate --help | grep -q -- '--index'; then
+              sudo podman manifest annotate --index \
+                --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+                --annotation "org.opencontainers.image.url=https://github.com/${GITHUB_REPOSITORY}" \
+                --annotation "org.opencontainers.image.description=${descs[$tag]}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                "$local_list"
+            fi
+
+            sudo podman manifest push --format oci --all \
+              --digestfile "${tag}.manifest.digest" \
+              "$local_list" "docker://${image_repo}:${tag}"
+
+            manifest_digest=$(tr -d '[:space:]' < "${tag}.manifest.digest")
+            printf "| \`%s\` | \`%s\` | \`%s\` | \`%s\` |\n" \
+              "$tag" "$manifest_digest" "$amd64_digest" "$arm64_digest" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          {
+            echo ""
+            echo "### Pull and tag for \`env.rc\`"
+            echo ""
+            echo '```bash'
+            echo "podman pull ${image_repo}:${tag_antigravity}"
+            echo "podman tag ${image_repo}:${tag_antigravity} localhost/vnc-desktop-ubuntu:${tag_antigravity}"
+            echo ""
+            echo "podman pull ${image_repo}:${tag_claude}"
+            echo "podman tag ${image_repo}:${tag_claude} localhost/vnc-desktop-ubuntu:${tag_claude}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
