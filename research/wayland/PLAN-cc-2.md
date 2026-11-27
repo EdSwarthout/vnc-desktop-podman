@@ -1,7 +1,8 @@
 # Wayland desktops: review of research-20261117 and plan (Claude Code)
 
-Status: planned, 2026-11-26. Builds on this branch (research/wayland, with deb/, vnc-pkg,
-AGENTS.md); input: origin/research-20261117 (3307cbf) and ./PLAN.md. Revision 2 of
+Status: Phase 1 done (2026-11-26, branch research/wayland-cc): results and the design
+changes they bring in [phase1/README.md](phase1/README.md). Planned 2026-11-26. Builds
+on research/wayland (with deb/, vnc-pkg, AGENTS.md); input: origin/research-20261117 (3307cbf) and ./PLAN.md. Revision 2 of
 ./PLAN-cc.md, with PLAN.md's strong points folded in (comparison: ./PLAN-compare.md).
 Supersedes ./PLAN.md where they differ.
 
@@ -148,8 +149,9 @@ aquamarine needs `xdg_wm_base` v6, which sway 1.12 doesn't offer.
 
 ## 3. Phases
 
-**Phase 1: answer the open questions in throwaway nested instances** (results go into
-this file; nothing is wired up yet). On a nested `vnc-desktop-ubuntu:gnome-2604`
+**Phase 1: answer the open questions in throwaway nested instances** (done: results in
+`phase1/README.md`, with its "Changes to PLAN-cc-2.md's design"; nothing is wired
+up yet). On a nested `vnc-desktop-ubuntu:gnome-2604`
 instance, with packages added as root (`gnome-shell gnome-remote-desktop pipewire
 wireplumber xwayland python3-dbus python3-gi openssl freerdp3-x11 gnome-settings-daemon
 gnome-terminal nautilus`):

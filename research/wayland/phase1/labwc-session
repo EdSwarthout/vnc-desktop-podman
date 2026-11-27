@@ -1,0 +1,25 @@
+#!/bin/bash
+# Phase 1 prototype of labwc's /usr/local/bin/vnc-wayland (PLAN-cc-2.md): labwc headless
+# (no /dev/dri), wayvnc on it, exits when either does. Run by hand in a nested instance
+# (the instance's own Xvnc stays on 5901, so wayvnc listens on WVNC_PORT, default 5911).
+# WLR_RENDERER: pixman (default) or gles2.
+L=${LW_LOG:-$HOME/.cache/labwc-try}; mkdir -p "$L"
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/xdg-$(id -u)}
+mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"
+unset DISPLAY WAYLAND_DISPLAY
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc:wlroots
+export WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=${WLR_RENDERER:-pixman}
+eval "$(dbus-launch --sh-syntax)"
+before=$(ls "$XDG_RUNTIME_DIR")
+labwc -S foot >>"$L/labwc.log" 2>&1 & lw=$!
+for _ in $(seq 50); do
+    s=$(comm -13 <(echo "$before" | sort) <(ls "$XDG_RUNTIME_DIR" | sort) | grep -E '^wayland-[0-9]+$' | head -1)
+    [ -n "$s" ] && break; sleep 0.2
+done
+export WAYLAND_DISPLAY=$s
+echo "WAYLAND_DISPLAY=$s DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" > "$L/env"
+wlr-randr --output HEADLESS-1 --custom-mode "${VNC_RESOLUTION:-1440x900}" >>"$L/labwc.log" 2>&1
+wayvnc -r ${WVNC_CONFIG:+-C "$WVNC_CONFIG"} 0.0.0.0 "${WVNC_PORT:-5911}" >>"$L/wayvnc.log" 2>&1 & wv=$!
+wait -n "$lw" "$wv"
+echo "$(date) labwc or wayvnc exited" >>"$L/labwc.log"
+kill "$lw" "$wv" 2>/dev/null

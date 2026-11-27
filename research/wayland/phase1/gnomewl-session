@@ -1,0 +1,114 @@
+#!/bin/bash
+# Phase 1 prototype of gnomewl's /usr/local/bin/vnc-session (research/wayland/PLAN-cc-2.md):
+# GNOME Shell headless (Wayland, Xwayland on) + gnome-remote-desktop in mirror mode, shown
+# on the Xvnc display ($DISPLAY, :1) by a full-screen xfreerdp3: the "RDP-in-VNC bridge".
+# Run from ~/.config/tigervnc/xstartup in place of vnc-session (under dbus-launch), so the
+# session lasts as long as gnome-shell, and ending it stops the container.
+# Environment: MOCK=0 (no mock logind), VNC_RESOLUTION (default 1440x900), GW_LOG (logs).
+D=$(dirname "$(readlink -f "$0")")
+L=${GW_LOG:-$HOME/.cache/gnomewl}; mkdir -p "$L"
+exec 2>>"$L/session.log"
+echo "=== $(date) gnomewl-session start" >&2
+set -x
+X11=$DISPLAY                           # the Xvnc display: only xfreerdp3 uses it
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/xdg-$(id -u)}
+mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_DESKTOP=gnome
+export GNOME_SHELL_SESSION_MODE=user
+export USER=${USER:-$(id -un)}   # podman sets no USER: grd stored an empty user name
+pids=()
+cleanup() { kill "${pids[@]}" 2>/dev/null; sleep 1; kill -9 "${pids[@]}" 2>/dev/null; }
+trap cleanup EXIT
+
+# 1. Private system bus (dbus-daemon wants a <listen> even with --address: generated)
+sock=$XDG_RUNTIME_DIR/system_bus_socket
+rm -f "$sock"
+cat > "$XDG_RUNTIME_DIR/system-bus.conf" <<EOF
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <listen>unix:path=$sock</listen>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/>
+  </policy>
+</busconfig>
+EOF
+export DBUS_SYSTEM_BUS_ADDRESS=unix:path=$sock
+dbus-daemon --config-file="$XDG_RUNTIME_DIR/system-bus.conf" \
+    --nofork --nopidfile 2>>"$L/sysbus.log" & pids+=($!)
+for _ in $(seq 50); do [ -S "$sock" ] && break; sleep 0.1; done
+if [ "${MOCK:-1}" = 1 ]; then
+    "$D/mock-logind.py" 2>>"$L/mock-logind.log" & pids+=($!)
+    sleep 1
+fi
+# Session manager stand-in on the session bus: Log Out / Power Off end gnome-shell
+"$D/mock-session-manager.py" 2>>"$L/mock-session-manager.log" & pids+=($!)
+
+# 2. Passwordless default keyring (grd's mirror mode keeps its credentials there)
+k=$HOME/.local/share/keyrings
+if [ ! -e "$k/default" ]; then (
+    umask 077; mkdir -p "$k"
+    [ -e "$k/Default_keyring.keyring" ] || printf '%s\n' "[keyring]" "display-name=Default keyring" \
+        "ctime=0" "mtime=0" "lock-on-idle=false" "lock-after=false" > "$k/Default_keyring.keyring"
+    printf Default_keyring > "$k/default"
+) fi
+
+# 3. GNOME Shell, headless, without the Xvnc DISPLAY
+res=${VNC_RESOLUTION:-1440x900}
+env -u DISPLAY gnome-shell --headless --wayland --virtual-monitor "$res" >>"$L/shell.log" 2>&1 &
+shell=$!; pids+=($shell)
+for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/wayland-0" ] && break; sleep 0.2; done
+export WAYLAND_DISPLAY=wayland-0
+kill -0 "$shell" || { echo "gnome-shell died" >&2; exit 1; }
+# D-Bus-activated apps (gnome-terminal-server, nautilus) start with the bus's activation
+# environment, which dbus-launch filled with DISPLAY=:1: point them at the Shell instead.
+sleep 2
+xw=$(ls /tmp/.X11-unix/ 2>/dev/null | sed -n 's/^X//p' | grep -vx "${X11#:}" | head -1)
+# X clients need mutter's Xwayland cookie too
+XAUTHORITY=$(ls "$XDG_RUNTIME_DIR"/.mutter-Xwaylandauth.* 2>/dev/null | head -n 1); export XAUTHORITY
+dbus-update-activation-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP \
+    XDG_SESSION_DESKTOP DBUS_SYSTEM_BUS_ADDRESS GNOME_SHELL_SESSION_MODE XAUTHORITY \
+    DISPLAY="${xw:+:$xw}"
+[ -n "$xw" ] && export DISPLAY=:$xw || unset DISPLAY   # for d_exec -s / env.sh
+# gnome-settings-daemon's plugins: gnome-session 50 would start them, but it needs systemd
+# (it only starts gnome-session@gnome.target). All 16 run without it; these are the useful
+# ones here (no wwan, smartcard, rfkill, usb-protection, print-notifications).
+for g in a11y-settings color datetime housekeeping keyboard media-keys power \
+         screensaver-proxy sharing sound xsettings; do
+    [ -x "/usr/libexec/gsd-$g" ] && { "/usr/libexec/gsd-$g" >>"$L/gsd.log" 2>&1 & pids+=($!); }
+done
+
+# 4. pipewire + wireplumber, then gnome-remote-desktop (mirror mode)
+env -u DISPLAY pipewire >>"$L/pipewire.log" 2>&1 & pids+=($!)
+sleep 1
+env -u DISPLAY wireplumber >>"$L/wireplumber.log" 2>&1 & pids+=($!)
+c=$HOME/.config/vnc-desktop
+mkdir -p "$c"
+[ -f "$c/rdp-tls.key" ] || openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
+    -subj /CN=vnc-desktop -out "$c/rdp-tls.crt" -keyout "$c/rdp-tls.key" 2>/dev/null
+[ -s "$c/rdp-pass" ] || ( umask 077; od -An -N16 -tx1 /dev/urandom | tr -d " \n" > "$c/rdp-pass" )
+set +x
+grdctl rdp set-tls-cert "$c/rdp-tls.crt"
+grdctl rdp set-tls-key "$c/rdp-tls.key"
+grdctl rdp set-credentials "$USER" "$(cat "$c/rdp-pass")"
+set -x
+grdctl rdp disable-view-only
+gsettings set org.gnome.desktop.remote-desktop.rdp enable true   # grdctl rdp enable needs systemd
+grdctl status >&2
+( while kill -0 "$shell" 2>/dev/null; do
+      env -u DISPLAY /usr/libexec/gnome-remote-desktop-daemon >>"$L/grd.log" 2>&1
+      echo "$(date) grd exited: $?" >&2; sleep 2
+  done ) & pids+=($!)
+for _ in $(seq 100); do grep -q ':0D3D ' /proc/net/tcp /proc/net/tcp6 2>/dev/null && break; sleep 0.2; done
+
+# 5. The bridge, in the foreground, while the Shell lives
+while kill -0 "$shell" 2>/dev/null; do
+    # /args-from:stdin: the password stays off the command line (/from-stdin prompts for
+    # the domain first and reads the password there)
+    printf '%s\n' /v:127.0.0.1 "/u:$USER" "/p:$(cat "$c/rdp-pass")" /d: /f -clipboard \
+            /cert:ignore /log-level:WARN \
+        | DISPLAY=$X11 xfreerdp3 /args-from:stdin >>"$L/xfreerdp.log" 2>&1
+    echo "$(date) xfreerdp3 exited: $?" >&2
+    sleep 1
+done
+echo "=== $(date) gnome-shell ended; session ends" >&2
