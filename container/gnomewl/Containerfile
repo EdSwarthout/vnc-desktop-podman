@@ -1,0 +1,67 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
+
+# GNOME Shell 50 (Wayland, d_target=gnomewl), on Ubuntu's browser stage (Chrome, the CLI
+# installers, TigerVNC/noVNC, nested podman). Runs gnome-shell --headless --wayland with
+# Xwayland and mirror-mode gnome-remote-desktop (RDP), bridged full-screen onto Xvnc :1
+# via xfreerdp3 so TigerVNC, noVNC, scrot, and d_test work unchanged. Optional external
+# RDP access: `d_rdp=1 d_run` (port 7450+N -> 3389).
+#   ubuntu - Ubuntu 26.04 + GNOME Shell 50 (Wayland) + RDP bridge
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+ARG USER_GID
+
+# gnome-shell + gnome-settings-daemon + xwayland: GNOME 50 Wayland desktop with X11 app
+#   support (gnome-session 50 requires systemd; vnc-session starts gsd-xsettings/keyboard).
+# gnome-remote-desktop + pipewire + wireplumber + gnome-keyring + openssl: mirror-mode RDP.
+# freerdp3-x11 + scrot: full-screen bridge on Xvnc :1 and tests/screenshot.sh.
+# python3-dbus + python3-gi: mock-logind.py on private system D-Bus.
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    freerdp3-x11 \
+    gnome-keyring \
+    gnome-remote-desktop \
+    gnome-settings-daemon \
+    gnome-shell \
+    gnome-terminal \
+    nautilus \
+    openssl \
+    pipewire \
+    python3-dbus \
+    python3-gi \
+    scrot \
+    wireplumber \
+    xwayland \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin
+
+RUN mkdir -p /usr/local/libexec/vnc-desktop
+COPY --chmod=755 container/gnomewl/mock-logind.py /usr/local/libexec/vnc-desktop/mock-logind.py
+COPY --chmod=755 container/gnomewl/vnc-session /usr/local/bin/vnc-session
+
+# Log Out menu entry (gnome-session isn't running, so Power Off -> Log Out has no session
+# manager to signal; closing gnome-shell stops the session and container).
+RUN printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Log Out (stop the container)' \
+        'Exec=pkill -x gnome-shell' 'Icon=system-log-out' 'Categories=System;' \
+        > /usr/share/applications/vnc-logout.desktop
+
+# No screen locking (no GDM screen shield anyway; belt-and-braces lockdown), trimmed dash
+# favourites, and mirror-mode RDP enabled by default.
+RUN printf '%s\n' \
+        '[org.gnome.desktop.lockdown]' 'disable-lock-screen=true' \
+        '[org.gnome.desktop.screensaver]' 'lock-enabled=false' \
+        '[org.gnome.desktop.session]' 'idle-delay=uint32 0' \
+        '[org.gnome.shell]' 'always-show-log-out=true' \
+        "favorite-apps=['google-chrome.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Terminal.desktop']" \
+        '[org.gnome.desktop.remote-desktop.rdp]' 'enable=true' 'view-only=false' \
+        > /usr/share/glib-2.0/schemas/99_vnc-desktop.gschema.override \
+    && glib-compile-schemas --strict /usr/share/glib-2.0/schemas
+
+USER ${USERID}

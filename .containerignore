@@ -4,9 +4,12 @@
 *
 !LICENSE
 !container/cli-installers
+!container/gnomewl/mock-logind.py
+!container/gnomewl/vnc-session
 !container/nested-subids
 !container/opencode/setup-opencode.sh
 !container/start.sh
 !container/vnc-pkg
+!container/vnc-wayland
 !container/vncserver-wrapper
 !user_files

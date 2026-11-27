@@ -64,10 +64,10 @@ if [ -x /usr/local/sbin/nested-subids ]; then
     fi
 fi
 
-# Stage "base" has no VNC: stay up for `podman exec` until stopped (--init passes the
-# stop signal on to sleep).
-if ! command -v vncserver >/dev/null; then
-    echo "start.sh: no vncserver in this image (stage base); waiting" >&2
+# Stage "base" has no display server: stay up for `podman exec` until stopped (--init
+# passes the stop signal on to sleep).
+if ! command -v vncserver >/dev/null && [ ! -x /usr/local/bin/vnc-wayland ]; then
+    echo "start.sh: no vncserver or vnc-wayland in this image (stage base); waiting" >&2
     exec sleep infinity
 fi
 
@@ -77,6 +77,7 @@ mkdir -p "$vncdir"
 # $VNC_PASSWORD, for a plain `podman run -e`). -s, not -f: a failed vncpasswd leaves an
 # empty file. Either way the clear-text copies go: the file is deleted and the variable
 # isn't passed on to the VNC server and the desktop.
+pw=
 if [ ! -s "$vncdir/passwd" ]; then
     if [ -s "$vncdir/passwd.init" ]; then
         pw=$(cat "$vncdir/passwd.init")
@@ -85,20 +86,36 @@ if [ ! -s "$vncdir/passwd" ]; then
     fi
     ( umask 077; printf '%s\n' "$pw" | vncpasswd -f > "$vncdir/passwd" )
 fi
+# Wayland/RDP credentials (stored mode 600 under ~/.config/vnc-desktop when needed by the
+# image, derived from passwd.init on first boot or a random password in nested copies).
+if [ -x /usr/local/bin/vnc-wayland ] && [ ! -s ~/.config/vnc-desktop/wayvnc-pass ]; then
+    (
+        umask 077
+        mkdir -p ~/.config/vnc-desktop
+        printf '%s\n' "${pw:-$(openssl rand -base64 12)}" > ~/.config/vnc-desktop/wayvnc-pass
+    )
+fi
+if [ -x /usr/libexec/gnome-remote-desktop-daemon ] && [ ! -s ~/.config/vnc-desktop/rdp-pass ]; then
+    (
+        umask 077
+        mkdir -p ~/.config/vnc-desktop
+        printf '%s\n' "${pw:-$(openssl rand -base64 12)}" > ~/.config/vnc-desktop/rdp-pass
+    )
+fi
 rm -f "$vncdir/passwd.init"
 unset VNC_PASSWORD pw
 # The session comes from the image (/usr/local/bin/vnc-session: an xterm or a desktop),
 # so a home works with any image. Write xstartup if it's missing; a customised one is
 # left alone.
-if [ ! -f "$vncdir/xstartup" ]; then
+if [ ! -x /usr/local/bin/vnc-wayland ] && [ ! -f "$vncdir/xstartup" ]; then
     printf '%s\n' '#!/bin/sh' 'unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS' \
         'exec dbus-launch --exit-with-session /usr/local/bin/vnc-session' > "$vncdir/xstartup"
     chmod +x "$vncdir/xstartup"
 fi
 
-# Run the VNC server (in the foreground, -fg) and websockify side by side. If either
-# exits — Xvnc crash, or the session ends (logging out, exiting the xterm) — stop the
-# other and exit, so the container stops instead of staying "up" with no desktop.
+# Run the VNC server (or vnc-wayland) and websockify side by side. If either exits —
+# server crash, or the session ends (logging out, exiting the xterm) — stop the other
+# and exit, so the container stops instead of staying "up" with no desktop.
 # `podman logs` says which.
 _kill_jobs() {
     local p
@@ -106,9 +123,16 @@ _kill_jobs() {
 }
 trap 'stopping=1; _kill_jobs' TERM INT
 
-# -desktop: the VNC window title; a nested instance's hostname is its parent's.
-vncserver :1 -fg -desktop "${D_NAME:-$(hostname)}:1 ($(id -un))" -geometry "${VNC_RESOLUTION:-1440x900}" -depth 24 -localhost no -SecurityTypes VncAuth &
-vnc_pid=$!
+if [ -x /usr/local/bin/vnc-wayland ]; then
+    /usr/local/bin/vnc-wayland &
+    vnc_pid=$!
+    vnc_name=vnc-wayland
+else
+    # -desktop: the VNC window title; a nested instance's hostname is its parent's.
+    vncserver :1 -fg -desktop "${D_NAME:-$(hostname)}:1 ($(id -un))" -geometry "${VNC_RESOLUTION:-1440x900}" -depth 24 -localhost no -SecurityTypes VncAuth &
+    vnc_pid=$!
+    vnc_name=vncserver
+fi
 
 # Browser access: http://localhost:6080/vnc.html
 # Listen on [::], which takes IPv4 too (bindv6only is 0), so the published port also
@@ -124,7 +148,7 @@ wait -n -p done_pid || rc=$?
 if [ -n "$stopping" ]; then
     echo "start.sh: stop signal received; shutting down" >&2
 else
-    [ "$done_pid" = "$vnc_pid" ] && what=vncserver || what=websockify
+    [ "$done_pid" = "$vnc_pid" ] && what=$vnc_name || what=websockify
     echo "start.sh: $what exited (status $rc); stopping container" >&2
 fi
 _kill_jobs

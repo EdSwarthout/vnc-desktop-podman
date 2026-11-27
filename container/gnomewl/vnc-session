@@ -1,0 +1,189 @@
+#!/bin/bash
+# gnomewl session (/usr/local/bin/vnc-session): runs GNOME Shell 50 (Wayland --headless)
+# with Xwayland, gsd-xsettings/gsd-keyboard, pipewire/wireplumber, and mirror-mode
+# gnome-remote-desktop (RDP on 127.0.0.1:3389), bridged full-screen onto Xvnc :1 via
+# xfreerdp3 so TigerVNC, noVNC, scrot, and d_test work unchanged. Optional external RDP
+# clients (d_rdp=1) share the same screen. Exits when gnome-shell exits (or on SIGTERM).
+set -u
+
+vnc_disp=${DISPLAY:-:1}
+uid=$(id -u)
+user=$(id -un)
+export XDG_RUNTIME_DIR="/tmp/runtime-$uid"
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+
+# 1. Private per-user system bus + mock logind (no systemd in the container).
+sys_sock="$XDG_RUNTIME_DIR/system_bus_socket"
+rm -f "$sys_sock"
+cat > "$XDG_RUNTIME_DIR/system-bus.conf" <<EOF
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <auth>EXTERNAL</auth>
+  <listen>unix:path=$sys_sock</listen>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+EOF
+export DBUS_SYSTEM_BUS_ADDRESS="unix:path=$sys_sock"
+
+_cleanup() {
+    rm -f "$XDG_RUNTIME_DIR/session.env"
+    local p
+    for p in $(jobs -p); do kill "$p" 2>/dev/null || true; done
+    wait 2>/dev/null || true
+}
+trap '_cleanup; exit 0' TERM INT
+
+dbus-daemon --config-file="$XDG_RUNTIME_DIR/system-bus.conf" \
+    --address="$DBUS_SYSTEM_BUS_ADDRESS" --nofork --nopidfile &
+for _ in $(seq 50); do
+    [ -S "$sys_sock" ] && break
+    sleep 0.1
+done
+
+/usr/local/libexec/vnc-desktop/mock-logind.py &
+sleep 0.5
+
+# 2. Passwordless default keyring for mirror-mode gnome-remote-desktop (no user password).
+kdir="$HOME/.local/share/keyrings"
+if [ ! -e "$kdir/default" ]; then
+    (
+        umask 077
+        mkdir -p "$kdir"
+        [ -e "$kdir/Default_keyring.keyring" ] || printf '%s\n' \
+            '[keyring]' 'display-name=Default keyring' 'ctime=0' 'mtime=0' \
+            'lock-on-idle=false' 'lock-after=false' > "$kdir/Default_keyring.keyring"
+        printf Default_keyring > "$kdir/default"
+    )
+fi
+
+# 3. TLS cert and RDP password file (created on first boot by start.sh; fallback here).
+cfgdir="$HOME/.config/vnc-desktop"
+mkdir -p "$cfgdir"
+if [ ! -s "$cfgdir/rdp-tls.key" ] || [ ! -s "$cfgdir/rdp-tls.crt" ]; then
+    (
+        umask 077
+        openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 -subj /CN=vnc-desktop \
+            -out "$cfgdir/rdp-tls.crt" -keyout "$cfgdir/rdp-tls.key" 2>/dev/null
+    )
+fi
+if [ ! -s "$cfgdir/rdp-pass" ]; then
+    ( umask 077; openssl rand -base64 12 > "$cfgdir/rdp-pass" )
+fi
+
+# 4. Start GNOME Shell 50 headless with Xwayland enabled (unset DISPLAY so it skips :1).
+(
+    unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+    export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=GNOME
+    exec gnome-shell --headless --wayland --virtual-monitor "${VNC_RESOLUTION:-1440x900}"
+) &
+gspid=$!
+
+sock=
+for _ in $(seq 150); do
+    for s in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+        [ -S "$s" ] && { sock=$s; break; }
+    done
+    [ -n "$sock" ] && break
+    kill -0 "$gspid" 2>/dev/null || { echo "gnomewl: gnome-shell failed to start" >&2; _cleanup; exit 1; }
+    sleep 0.2
+done
+[ -n "$sock" ] || { echo "gnomewl: Wayland socket did not appear" >&2; _cleanup; exit 1; }
+export WAYLAND_DISPLAY
+WAYLAND_DISPLAY=$(basename "$sock")
+
+# Wait briefly for Xwayland socket + mutter auth file.
+xdisp=
+xauth=
+for _ in $(seq 30); do
+    for s in /tmp/.X11-unix/X*; do
+        [ -S "$s" ] || continue
+        [ "${s##*/}" = "X${vnc_disp#:}" ] && continue
+        xdisp=":${s##*X}"
+        break
+    done
+    for a in "$XDG_RUNTIME_DIR"/.mutter-Xwaylandauth.*; do
+        [ -f "$a" ] && { xauth=$a; break; }
+    done
+    [ -n "$xdisp" ] && [ -n "$xauth" ] && break
+    sleep 0.2
+done
+
+# Export Wayland + Xwayland session environment for `d_exec -s`.
+(
+    umask 077
+    {
+        printf 'WAYLAND_DISPLAY=%s\n' "$WAYLAND_DISPLAY"
+        printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR"
+        printf 'XDG_SESSION_TYPE=wayland\n'
+        printf 'XDG_CURRENT_DESKTOP=GNOME\n'
+        printf 'DBUS_SESSION_BUS_ADDRESS=%s\n' "${DBUS_SESSION_BUS_ADDRESS:-}"
+        printf 'DBUS_SYSTEM_BUS_ADDRESS=%s\n' "$DBUS_SYSTEM_BUS_ADDRESS"
+        printf 'SHELL=%s\n' "${SHELL:-/bin/bash}"
+        [ -n "$xdisp" ] && printf 'DISPLAY=%s\n' "$xdisp"
+        [ -n "$xauth" ] && printf 'XAUTHORITY=%s\n' "$xauth"
+    } > "$XDG_RUNTIME_DIR/session.env"
+)
+
+# 5. Minimal gnome-settings-daemon helpers (gnome-session 50 requires systemd).
+if [ -n "$xdisp" ] && [ -n "$xauth" ] && [ -x /usr/libexec/gsd-xsettings ]; then
+    DISPLAY="$xdisp" XAUTHORITY="$xauth" /usr/libexec/gsd-xsettings &
+fi
+if [ -x /usr/libexec/gsd-keyboard ]; then
+    /usr/libexec/gsd-keyboard &
+fi
+
+# 6. PipeWire + WirePlumber + mirror-mode gnome-remote-desktop (auto-restarted if an
+# external client with +clipboard triggers grd's FUSE clipboard abort).
+pipewire &
+sleep 1
+wireplumber &
+sleep 1
+
+rdp_pw=$(cat "$cfgdir/rdp-pass")
+grdctl rdp set-tls-cert "$cfgdir/rdp-tls.crt" >/dev/null 2>&1 || true
+grdctl rdp set-tls-key "$cfgdir/rdp-tls.key" >/dev/null 2>&1 || true
+grdctl rdp set-credentials "$user" "$rdp_pw" >/dev/null 2>&1 || true
+unset rdp_pw
+grdctl rdp disable-view-only >/dev/null 2>&1 || true
+gsettings set org.gnome.desktop.remote-desktop.rdp enable true >/dev/null 2>&1 || true
+
+(
+    while kill -0 "$gspid" 2>/dev/null; do
+        /usr/libexec/gnome-remote-desktop-daemon
+        kill -0 "$gspid" 2>/dev/null || break
+        echo "gnomewl: gnome-remote-desktop-daemon exited; restarting" >&2
+        sleep 1
+    done
+) &
+
+# 7. Bridge: full-screen xfreerdp3 on Xvnc :1 reading password from stdin (never argv).
+# Exits the whole session only when gnome-shell exits.
+rc=0
+while kill -0 "$gspid" 2>/dev/null; do
+    for _ in $(seq 50); do
+        ss -tln 2>/dev/null | grep -q ':3389 ' && break
+        kill -0 "$gspid" 2>/dev/null || break
+        sleep 0.2
+    done
+    kill -0 "$gspid" 2>/dev/null || break
+    DISPLAY="$vnc_disp" xfreerdp3 /v:127.0.0.1 /u:"$user" /from-stdin:force /f \
+        -clipboard /cert:ignore /auto-reconnect < "$cfgdir/rdp-pass" &
+    bpid=$!
+    wait -n "$gspid" "$bpid" || true
+    if ! kill -0 "$gspid" 2>/dev/null; then
+        wait "$gspid" || rc=$?
+        break
+    fi
+    kill "$bpid" 2>/dev/null || true
+    wait "$bpid" 2>/dev/null || true
+    sleep 1
+done
+
+_cleanup
+exit "$rc"

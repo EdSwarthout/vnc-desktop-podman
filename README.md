@@ -6,7 +6,7 @@ coding-agent CLIs. Distros and their desktops:
 
 | Distro | Desktops |
 |--------|----------|
-| Ubuntu 26.04 | XFCE, LXQt, GNOME Flashback, KDE Plasma, MATE, Cinnamon |
+| Ubuntu 26.04 | XFCE, LXQt, GNOME Flashback, GNOME Shell (Wayland: `gnomewl`), `labwc` (Wayland), KDE Plasma, MATE, Cinnamon |
 | Debian 13 (trixie) | GNOME Shell |
 | Fedora 45 | XFCE, LXQt |
 | Arch Linux | Openbox (with Chromium) |
@@ -25,19 +25,20 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 |-----------------|---------------------------------------------------------------|
 | `container/`    | What the images are built from (you normally don't touch it): |
 | `container/deb/`, `fedora/`, `archlinux/` | `Containerfile` with the distro's stages `base` → `vnc` → `browser` (`deb/` is shared by Ubuntu and Debian; see [Images](#images)) |
-| `container/xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
+| `container/xfce/`, `lxqt/`, `gnome/`, `gnomewl/`, `labwc/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` | Desktops: a `Containerfile` with one stage per distro that has the desktop, built on that distro's `browser` |
 | `container/opencode/`, `antigravity/`, `claude/` | [Agent desktops](#agent-desktops): a `Containerfile` with one stage per distro, built on a desktop, and a README |
 | `container/chrome/` | `devtools`: a `Containerfile`, Ubuntu's `browser` + Chrome Canary and browser tools |
 | `container/cli-installers/` | `install_claude`, `install_agy`, `install_opencode`, `install_grok`, `install_t3code`, in every `browser` stage (see [CLI installers](#cli-installers)) |
 | `container/start.sh` | Container entrypoint (all images): first-boot setup, starts the VNC session if the stage has one |
 | `container/vnc-pkg` | `/usr/local/sbin/vnc-pkg` (sudo-allowed) + `/usr/local/bin/vnc-pkg` wrapper: upgrade, install, or remove repo packages inside an instance |
 | `container/vncserver-wrapper` | `/usr/local/bin/vncserver` in every `vnc` stage: runs the VNC X server and the session in the foreground |
+| `container/vnc-wayland` | `/usr/local/bin/vnc-wayland` in wlroots Wayland desktops (`labwc`): runs headless compositor and `wayvnc` in the foreground |
 | `container/nested-subids` | Fits nested podman's sub-IDs to the container at boot (all images) |
 | `user_files/<distro>/` | Your files for new homes (not in git; see [below](#run-an-instance)) |
 | `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`), an example script and a [README](chrome/README.md) of the options |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked), `test_env.sh` (`env.rc` unit tests) |
 | `docs/`         | [Screenshots](docs/README.md) of each desktop; [article](docs/Advantages-article.md) on the advantages |
-| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
+| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_rdp`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `.env`          | Your VNC password and local settings (not in git)             |
 
@@ -136,6 +137,8 @@ one is runnable with `d_run`. The versions are `d_versions` in `env.rc`.
 | `xfce`    | XFCE, `xfce4-screenshooter` | XFCE | ubuntu, fedora |
 | `lxqt`    | LXQt with openbox, `screengrab`, `featherpad` | LXQt | ubuntu, fedora |
 | `gnome`   | Ubuntu: GNOME Flashback (gnome-panel, metacity, nautilus); Debian: GNOME Shell; `gnome-terminal`, `gnome-screenshot` | GNOME | ubuntu, debian |
+| `gnomewl` | GNOME Shell 50 (Wayland `--headless`) + Xwayland, mirror-mode RDP bridged onto Xvnc, `gnome-terminal`, `nautilus`, `scrot` | GNOME Shell (Wayland) | ubuntu |
+| `labwc`   | `labwc` (wlroots Wayland), `wayvnc`, `foot`, `swaybg`, `wlr-randr`, `grim`, `wtype`, Xwayland | `labwc` (Wayland) | ubuntu |
 | `kde`     | KDE Plasma 6 (X11 session, `kwin-x11`), Dolphin, Konsole, System Settings, `spectacle` | Plasma | ubuntu |
 | `mate`    | MATE (mate-panel, marco, caja), `mate-terminal`, `scrot` | MATE | ubuntu |
 | `cinnamon` | Cinnamon (software-rendering session), Nemo, `gnome-terminal`, `scrot` | Cinnamon | ubuntu |
@@ -160,6 +163,32 @@ can't run as a session on the VNC X server. There is no `gnome-session` either, 
 the user menu's **Log Out** does nothing: to end the session (and stop the
 container) use **Applications → System Tools → Log Out (stop the container)**, or
 `podman stop`.
+
+Ubuntu's `gnomewl` runs **GNOME Shell 50 on Wayland** (`gnome-shell --headless --wayland`)
+with a private per-user system D-Bus and `mock-logind.py` (no systemd, no `/dev/dri`
+needed), Xwayland, `gsd-xsettings`/`gsd-keyboard`, and mirror-mode
+`gnome-remote-desktop` bridged full-screen onto Xvnc `:1` via `xfreerdp3`, so `d_vnc`,
+`d_novnc`, `tests/screenshot.sh`, and `d_test` work unchanged. For direct RDP (avoiding
+the VNC bridge's second encode), start with `d_rdp=1 d_run` (publishes `7450+N → 3389`,
+respecting `d_bind`) and connect with `d_rdp` (uses `-clipboard` because `grd`'s FUSE
+clipboard mount is unavailable in rootless containers; the session automatically restarts
+`grd` if an external `+clipboard` client crashes it). Use **Log Out (stop the container)**
+(or `podman stop`) to end the session. Screen locking is impossible (no GDM screen shield).
+
+Ubuntu's `labwc` runs a lightweight **wlroots Wayland** desktop (`labwc` + `wayvnc` +
+`noVNC` via `/usr/local/bin/vnc-wayland`), with `foot`, `swaybg`, `wlr-randr`, `grim`,
+`wtype`, and Xwayland. Right-click the desktop for **Terminal**, **Chrome**, and **Exit**
+(stops the container). Because Ubuntu's packaged `noVNC` cannot speak `wayvnc`'s RSA-AES
+auth, `wayvnc` runs with `enable_auth=false` by default — set `d_bind=127.0.0.1` on
+untrusted networks (or pass `-e WAYVNC_AUTH=1` for native TigerVNC clients with
+username/password auth).
+
+**Optional Mesa GPU acceleration:** Wayland desktops render on the CPU by default (works
+on every host with no `/dev/dri`). On hosts with an Intel or AMD Mesa render node, set
+`d_dri_render=auto` (picks the first non-NVIDIA `/dev/dri/renderD*`, skipping `0x10de`) or
+`d_dri_render=/dev/dri/renderD128` in `.env` or per `d_run` to pass `--device <node>
+--group-add keep-groups` (`labwc` switches to `gles2` and `gnomewl` uses mutter's GBM
+renderer). `/dev/dri/card*` is never passed.
 
 Debian's `gnome` is **GNOME Shell**: GNOME 48 still has an X11 session. It starts
 without systemd, given a stand-in system D-Bus (with no services on it, so GNOME
@@ -356,6 +385,10 @@ which one exited.
 - **VNC client:** `d_vnc` runs `vncviewer` against the selected instance using
   its stored password file. From another machine, point a VNC client at
   `<host>:6901` (Ubuntu instance 1).
+- **RDP client (`gnomewl`, optional):** start with `d_rdp=1 d_run` to also
+  publish `7450+N → 3389`, then run `d_rdp` (runs `xfreerdp3` reading
+  `~/.config/vnc-desktop/rdp-pass` via `/from-stdin:force` with `-clipboard`, or
+  prints the command if `xfreerdp3` isn't installed).
 
 > The ports are published on all interfaces and VNC/noVNC traffic is
 > unencrypted. Use this only on a trusted LAN behind a firewall, or set
@@ -477,7 +510,7 @@ the host, update `.env`, `source env.rc`, then `d_run` again — or run
 `vncpasswd` inside the container and restart it.
 
 **Try every target at once:** `d_all N` builds each target of `$d_distro` (Ubuntu: `base vnc browser
-xfce lxqt gnome kde mate cinnamon devtools lxqt-opencode lxqt-antigravity gnome-opencode
+xfce lxqt gnome gnomewl labwc kde mate cinnamon devtools lxqt-opencode lxqt-antigravity gnome-opencode
 gnome-antigravity gnome-claude`) and runs it
 on instance N, N+1, …, opening a `d_vnc` viewer in the background for each one with a desktop (log
 in `/tmp/d_all-<name>.log`). `d_all 11 xfce lxqt` limits it to those targets. N is required, because

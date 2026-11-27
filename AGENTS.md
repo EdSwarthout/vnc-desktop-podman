@@ -6,8 +6,9 @@ coding-agent CLI installers, `vnc-pkg`, and nested rootless podman, in three lay
   `container/deb/Containerfile` (shared by Ubuntu and Debian via `DISTRO`/`USER_FILES_GLOB`),
   `container/fedora/Containerfile`, `container/archlinux/Containerfile`, stages `base` → `vnc` → `browser`;
 - **desktops** on a distro's `browser`: `container/<desktop>/Containerfile`, one stage per
-  distro that has it: Ubuntu `xfce`, `lxqt`, `gnome` (Flashback), `kde`, `mate`, `cinnamon`;
-  Debian `gnome` (Shell); Fedora `xfce`, `lxqt`; Arch `openbox`;
+  distro that has it: Ubuntu `xfce`, `lxqt`, `gnome` (Flashback), `gnomewl` (Shell 50
+  Wayland), `labwc` (wlroots Wayland), `kde`, `mate`, `cinnamon`; Debian `gnome` (Shell);
+  Fedora `xfce`, `lxqt`; Arch `openbox`;
 - **agent desktops** `<desktop>-<agent>` on a desktop: `container/<agent>/Containerfile`:
   `lxqt-opencode`, `lxqt-antigravity` (Ubuntu, Fedora), `gnome-opencode`,
   `gnome-antigravity`, `gnome-claude` (Ubuntu); an agent's `ubuntu` stage works on any
@@ -37,8 +38,9 @@ Under `container/` (build context is always the repo root):
   `ARG USER_FILES_GLOB`), stages `base` → `vnc` → `browser`. Package lists are **sorted**.
 - `fedora/Containerfile` — Fedora 45 (`registry.fedoraproject.org/fedora:45`), dnf5.
 - `archlinux/Containerfile` — Arch Linux (rolling, amd64 only), pacman, Chromium in `browser`.
-- `xfce/`, `lxqt/`, `gnome/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` — desktop
-  `Containerfile`s (`ARG BASE`, one stage per supported distro named `<distro>`).
+- `xfce/`, `lxqt/`, `gnome/`, `gnomewl/`, `labwc/`, `kde/`, `mate/`, `cinnamon/`, `openbox/` — desktop
+  `Containerfile`s (`ARG BASE`, one stage per supported distro named `<distro>`). Target
+  names are hyphen-free (`_d_distro` parses `<desktop>-<agent>` on `-`).
 - `opencode/`, `antigravity/`, `claude/` — agent desktop `Containerfile`s + `README.md`
   (keep main `README.md`'s Agent desktops table in sync).
   - `opencode`: Electron `.deb`/`.rpm` from opencode.ai's "latest" URL (not GitHub);
@@ -63,11 +65,14 @@ Under `container/` (build context is always the repo root):
   home volume, self-updating.
 - `vncserver-wrapper` — `/usr/local/bin/vncserver` in every `vnc` stage; foreground
   `Xtigervnc`/`Xvnc` + `xstartup`, sets `XDG_SESSION_TYPE=x11` etc., exits when either ends.
+- `vnc-wayland` — `/usr/local/bin/vnc-wayland` in wlroots Wayland desktops (`labwc`);
+  foreground `dbus-launch` + headless compositor + `wayvnc`, writes `session.env`, exits
+  when either compositor or `wayvnc` ends.
 - `start.sh` — entrypoint (under `--init`, `set -e`): strips ambient caps (`setpriv`),
   exports `$SHELL` from passwd, first-boot home seeding (`/etc/skel`, guarded `~/.local/bin`
   PATH, `user_files.tar`, `D_NAME` prompt), runs `sudo /usr/local/sbin/nested-subids`,
-  converts/deletes `passwd.init`, starts `vncserver -fg` + `websockify` (or `sleep infinity`
-  for `base`).
+  converts/deletes `passwd.init` (also seeding `wayvnc-pass` / `rdp-pass` when applicable),
+  starts `vnc-wayland` or `vncserver -fg` + `websockify` (or `sleep infinity` for `base`).
 - `nested-subids` — `/usr/local/sbin/nested-subids`, run via `sudo` at boot to fit
   `/etc/subuid`/`/etc/subgid` and `newuidmap`/`newgidmap` file caps to the container.
 - `vnc-pkg` — `/usr/local/sbin/vnc-pkg` (sudo-allowed) + `/usr/local/bin/vnc-pkg` wrapper:
@@ -82,13 +87,13 @@ Under `container/` (build context is always the repo root):
 
 Top-level files:
 - `env.rc` — host/nested bash helpers (`d_0`, `d_build`, `d_build_fresh`, `d_select`,
-  `d_run_new`, `d_run`, `d_run_cmd`, `d_vnc`, `d_novnc`, `d_logs`, `d_commit`,
+  `d_run_new`, `d_run`, `d_run_cmd`, `d_vnc`, `d_novnc`, `d_rdp`, `d_logs`, `d_commit`,
   `d_commit_watch`, `d_uncommit`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`). Maps
   `ubuntu`/`debian` → `deb/` and `devtools` → `chrome/` via `d_dirs`. Labels every built
   image with `org.opencontainers.image.description` from `d_desc_distros`/`d_descs` (**add
   new distros/targets there**).
 - `.containerignore` — allow-list for repo-root build context (`LICENSE`,
-  `container/{start.sh,nested-subids,vnc-pkg,vncserver-wrapper,cli-installers,opencode/setup-opencode.sh}`,
+  `container/{start.sh,nested-subids,vnc-pkg,vncserver-wrapper,vnc-wayland,cli-installers,gnomewl/{mock-logind.py,vnc-session},opencode/setup-opencode.sh}`,
   `user_files`). **Any new `COPY` source needs a `!` line here.**
 - `chrome/env.rc` — sourced by `env.rc`: `d_chrome`, `d_chrome_mcp`, `d_devtools`.
 - `tests/` — `tests.sh` (nested podman), `test_env.sh` (stubbed-`podman` unit tests, run in
@@ -142,6 +147,18 @@ See `.agents/skills/nested-testing/SKILL.md` for full testing commands.
     starts `metacity`, `gnome-flashback`, `gnome-panel` directly; `vnc-logout.desktop`
     stands in for Log Out; `default-layout='gnome-flashback'`, `screensaver=false`.
     `seahorse` is included for keyring inspection.
+  - Ubuntu `gnomewl`: GNOME Shell 50 (`--headless --wayland`, Xwayland on `:0` + mutter
+    Xauthority), private system D-Bus + `mock-logind.py`, `gsd-xsettings`/`gsd-keyboard`,
+    passwordless keyring + `rdp-pass`, mirror-mode `gnome-remote-desktop` (auto-restarted
+    if a `+clipboard` client hits FUSE), bridged full-screen onto Xvnc `:1` via `xfreerdp3
+    /from-stdin:force -clipboard`. Writes `$XDG_RUNTIME_DIR/session.env` for `d_exec -s`.
+    Optional direct RDP: `d_rdp=1` (`7450+N:3389`, respects `d_bind`) + `d_rdp`.
+  - Ubuntu `labwc`: headless wlroots (`WLR_RENDERER=pixman` without `/dev/dri`, `gles2`
+    with Mesa render node) + `wayvnc` via `/usr/local/bin/vnc-wayland`, `foot`, `swaybg`,
+    `wlr-randr`, `grim`, `wtype`, Xwayland. `wayvnc` defaults to `enable_auth=false` so
+    `noVNC` works (`WAYVNC_AUTH=1` enables PKCS#1 RSA-AES auth for native TigerVNC).
+  - Optional Mesa GPU pass-through: `d_dri_render=auto` (skips NVIDIA `0x10de`) or
+    `/dev/dri/renderD*` passes `--device <node> --group-add keep-groups`; never `card*`.
   - Debian `gnome`: GNOME 48 X11 Shell with stand-in per-user system `dbus-daemon`
     (`/usr/local/share/vnc-system-bus.conf`), `--disable-acceleration-check`,
     `always-show-log-out=true`, trimmed dash favourites. No `claude-desktop`.
@@ -169,7 +186,8 @@ See `.agents/skills/nested-testing/SKILL.md` for full testing commands.
 - **Port & instance scheme** (N = 1..49): `<image>-<tag>-<VNC port>` (nested:
   `<parent>_<name>`). VNC / noVNC bases: ubuntu 6900/6080, debian 6950/6130, devtools
   7000/6180, archlinux 7050/6230, opencode 7150/6330, antigravity 7200/6380, fedora
-  7350/6530, claude 7400/6580 (7100/6280 reserved for omarchy). Same distro/layer shares
+  7350/6530, claude 7400/6580 (7100/6280 reserved for omarchy); optional RDP base:
+  `gnomewl` 7450 (`d_rdp=1`). Same distro/layer shares
   ports across targets; `d_run_new`, `d_screenshots`, and `d_test` check `_d_port_used`.
 - **Nested podman**: `/etc/subuid`/`/etc/subgid` fit inside 0..65535 (`subgid` adds
   `<user>:0:1` so nested root can write shared apt cache `partial/`); `newuidmap`/`newgidmap`

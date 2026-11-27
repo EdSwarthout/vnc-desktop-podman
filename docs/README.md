@@ -21,6 +21,14 @@ Each desktop as it first comes up: a new home dir, nothing opened, 1440x900
 ## `gnome`: GNOME Flashback
 ![gnome stage](ubuntu/gnome.png)
 
+## `gnomewl`: GNOME Shell 50 (Wayland)
+Starts in the Activities overview, bridged full-screen from mirror-mode RDP onto VNC (the orange indicator in the top-right shows the active remote desktop session).
+![gnomewl stage](ubuntu/gnomewl.png)
+
+## `labwc`: labwc (Wayland)
+Headless wlroots compositor over `wayvnc` with a `foot` terminal; right-click the background for the menu (Terminal, Chrome, Exit).
+![labwc stage](ubuntu/labwc.png)
+
 ## `kde`: KDE Plasma
 ![kde stage](ubuntu/kde.png)
 

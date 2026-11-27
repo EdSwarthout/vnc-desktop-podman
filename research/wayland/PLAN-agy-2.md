@@ -1,7 +1,7 @@
 # Wayland Desktops in Rootless Podman — Merged Plan
 
-Status: **planned** (2026-11-26, branch `research/wayland`, built on `main` at `eed45b9`).
-Inputs: `origin/research-20261117` (`3307cbf`), [PLAN.md](PLAN.md), and [PLAN-cc.md](PLAN-cc.md).
+Status: **Phases 1–3 and 5 implemented and verified on nested amd64; Phase 4 `d_dri_render` implemented (host GPU & arm64 tests remaining)** (2026-11-26, branch `research/wayland-agy`, based on `origin/research/wayland` at `048298c`).
+Inputs: `origin/research-20261117` (`3307cbf`), [PLAN.md](PLAN.md), [PLAN-cc.md](PLAN-cc.md), [PLAN-cc-2.md](PLAN-cc-2.md).
 
 ---
 
@@ -71,34 +71,45 @@ Runs under `xstartup` + `dbus-launch` on Xvnc `:1`, so `start.sh` keeps its norm
 
 ## 3. Phased Execution Plan
 
-### Phase 1 — Answer open questions in throwaway nested Ubuntu instances
-Record findings directly in this file before wiring up Containerfiles or `env.rc`:
-1. **GNOME Xwayland & `DISPLAY`:** In a throwaway `vnc-desktop-ubuntu:gnome-2604` nested instance with `gnome-shell gnome-remote-desktop pipewire wireplumber xwayland python3-dbus python3-gi openssl freerdp3-x11 gnome-settings-daemon gnome-terminal nautilus` added as root, start `gnome-shell --headless --wayland` with `DISPLAY` unset. Confirm Xwayland starts, which `DISPLAY` it picks (`:0` or `:2` while `:1` is Xvnc), and that both X11 apps and Chrome (Wayland & X11 ozone) render.
-2. **`gnome-session` vs `gsd-*`:** Verify whether GNOME 50's `gnome-session` works without systemd; if not, identify the minimal `gsd-*` daemons needed for themes, keyboard, and xsettings.
-3. **`mock-logind.py`:** Confirm whether it's needed for clean startup/shutdown (keep if in doubt).
-4. **Bridge + mirror-mode `grd` + FUSE clipboard:** Run full-screen `xfreerdp3 /from-stdin` on `:1` against mirror-mode `grd` and view via `noVNC`. Test input (including `Super`, Activities overview, keyboard layout), verify a second external RDP client mirrors the same screen, and test whether `grd` survives a client with clipboard enabled (note: `env.rc` already passes `--device /dev/fuse` both top-level and nested, so check if `fusermount3` still fails due to user-namespace mount permissions and whether clipboard redirection can be disabled server-side).
-5. **Lock & Log Out:** Test `org.gnome.ScreenSaver.Lock`, `Super+L`, and clicking Log Out (confirm `gnome-shell` exits cleanly).
-6. **`labwc` + `wayvnc` auth (no `/dev/dri`):** Test headless `pixman` vs `gles2`/llvmpipe, `wlr-randr`, `grim`, `wtype`, Xwayland, Chrome, and `wayvnc` RSA-AES/TLS auth from both `noVNC` and TigerVNC `vncviewer` (confirm how `d_vnc` should authenticate).
+### Phase 1 — Answer open questions in throwaway nested Ubuntu instances (**DONE** 2026-11-26, amd64)
+All 6 items verified in throwaway nested Ubuntu 26.04 instances (`browser` and `gnome` stages, zero `/dev/dri`):
+1. **GNOME Xwayland & `DISPLAY`:** Confirmed. Starting `gnome-shell --headless --wayland --virtual-monitor 1440x900` with `DISPLAY` unset spawns Xwayland on `:0` (while Xvnc holds `:1`) and writes `$XDG_RUNTIME_DIR/.mutter-Xwaylandauth.XXXXXX`. Passing `DISPLAY=:0 XAUTHORITY="$xauth"` lets X11 clients (`xterm`) connect cleanly (`GNOME-XWAYLAND-AUTH-OK`). Because `gnome-shell` creates `wayland-0` and `.mutter-Xwaylandauth.*` after startup, `vnc-session` writes `$XDG_RUNTIME_DIR/session.env` so `d_exec -s` picks up `WAYLAND_DISPLAY`, `DISPLAY`, and `XAUTHORITY`.
+2. **`gnome-session` vs `gsd-*`:** Confirmed `gnome-session` 50.1 removed `--builtin` (`Unknown option --builtin`) and requires systemd. Starting `/usr/libexec/gsd-xsettings` (with Xwayland `DISPLAY`/`XAUTHORITY`) and `/usr/libexec/gsd-keyboard` directly works cleanly (11 threads, ~20 MB RSS combined).
+3. **`mock-logind.py`:** Kept (1 thread, 27 MB RSS); gives clean `gnome-shell` startup with no login1 state-machine errors.
+4. **Bridge + mirror-mode `grd` + FUSE clipboard:**
+   - Exact `xfreerdp3` stdin flag is `/from-stdin:force` (plain `/from-stdin` fails NLA auth). Full-screen `1440×900` GNOME Shell 50.1 rendered cleanly on `:1` and captured via `scrot`.
+   - Connecting a 2nd simultaneous `xfreerdp3` client to mirror-mode `grd` kept the bridge alive (shared view confirmed).
+   - `org.gnome.desktop.remote-desktop.rdp` has no server-side clipboard disable key. Even with `--device /dev/fuse`, `fusermount3: mount failed: Permission denied` still aborts `gnome-remote-desktop-daemon` when a client connects with `+clipboard`. Solution: bridge and `d_rdp` pass `-clipboard`, and `vnc-session` supervises and auto-restarts `grd` if an external `+clipboard` client crashes it; the container stops only when `gnome-shell` exits.
+5. **Lock & Log Out:** `org.gnome.ScreenSaver.Lock` and `GetActive` both return `ServiceUnknown: The name org.gnome.Shell.ScreenShield was not provided` (no GDM = no screen shield; locking is impossible). Add `vnc-logout.desktop` (`pkill -x gnome-shell`) alongside `always-show-log-out=true` since `gnome-session` isn't running.
+6. **`labwc` + `wayvnc` auth (zero `/dev/dri`):**
+   - All packages exist in Ubuntu 26.04: `labwc` 0.9.3, `wayvnc` 0.9.1 (`neatvnc` 0.9.1), `wlr-randr` 0.4.1, `grim` 1.4.0, `wtype` 0.4, `foot` 1.25.0, `xwayland` 24.1.10, `swaybg` 1.2.1.
+   - `WLR_RENDERER=gles2` fails without `/dev/dri` (`no DRM FD available`); **`WLR_RENDERER=pixman` works cleanly**: `wlr-randr` sets `1440×900`, `grim` saves crisp PNGs, `foot` + `wtype` works, Xwayland starts on `:0` (`XWAYLAND-OK`), and native Wayland Chrome renders cleanly.
+   - **Auth finding:** `wayvnc` 0.9.1 with `enable_auth=true` requires a traditional PKCS#1 RSA key (`openssl genrsa -traditional`, not OpenSSL 3's default PKCS#8) and advertises only `[19 (VeNCrypt/TLSPlain), 129 (RA2_256), 5 (RA2)]`. Ubuntu's packaged `noVNC` supports only `None (1)`, `VNCAuth (2)`, `RA2ne (6)`, and `VeNCrypt Plain (256)` — so `noVNC` cannot authenticate when `wayvnc` has `enable_auth=true`. Decision: default `wayvnc` to `enable_auth=false` so `noVNC` and `d_vnc` work out of the box (use `d_bind=127.0.0.1` on untrusted networks), with opt-in `WAYVNC_AUTH=1` enabling RSA-AES auth for native TigerVNC clients.
+7. **Resource usage (idle, CPU rendering):**
+   - `labwc` + `wayvnc`: **35 threads, ~91 MB RSS**.
+   - `gnomewl` (`gnome-shell` + `gsd-xsettings` + `gsd-keyboard` + `pipewire` + `wireplumber` + `grd` + `mock-logind` + `dbus-daemon`): **117 threads, ~440 MB RSS** (plus `Xvnc` + `xfreerdp3` bridge; well below `d_pids_limit=16384`).
 
-### Phase 2 — Implement `labwc`
-- Add `container/labwc/Containerfile`, `container/vnc-wayland` (with `!container/vnc-wayland` in `.containerignore`), `start.sh` branch, `env.rc` (`_d_session_sh`, `d_exec -s`, `_d_wait_ready`, `d_test`), `tests/screenshot.sh`, `tests/lock.sh`, and `tests/test_env.sh`.
-- Gate: `shellcheck`, `bash tests/test_env.sh`, and `d_test 1 labwc` all pass (`0 failed`) with a clean screenshot.
+### Phase 2 — Implement `labwc` (**DONE** 2026-11-26, amd64 nested)
+- Implemented `container/labwc/Containerfile`, `container/vnc-wayland` (`!container/vnc-wayland` in `.containerignore`), `container/start.sh` branch, `env.rc` (`_d_session_sh`, `d_exec -s` via `session.env`, `_d_wait_ready` `grim` fallback, `d_test` `vnc-wayland exited`), `tests/screenshot.sh`, `tests/lock.sh`, and `tests/test_env.sh`.
+- Verified: `shellcheck` (0 warnings), `bash tests/test_env.sh` (0 failed), and `d_distro=ubuntu d_test 10 labwc` (**0 failed**, clean screenshot).
 
-### Phase 3 — Implement `gnomewl`
-- Add `container/gnomewl/Containerfile` (sorted packages + apt cache tail, `mock-logind.py`, `vnc-session` bridge, keyring writer, `--strict` gschema override), `start.sh` `rdp-pass` support, `d_rdp`/`d_rdp_ports0` in `env.rc`, and `tests/lock.sh` Wayland GNOME checks.
-- Gate: `d_test 1 gnomewl` passes (`0 failed`), verified on amd64 and DGX Spark (arm64); manual check of `d_rdp=1` + external `xfreerdp3`, and verified no password in `podman inspect`, `/proc/*/environ`, or `/proc/*/cmdline`.
+### Phase 3 — Implement `gnomewl` (**DONE** 2026-11-26, amd64 nested; arm64 host test pending)
+- Implemented `container/gnomewl/{Containerfile,mock-logind.py,vnc-session}`, `container/start.sh` `rdp-pass` seeding, `d_rdp`/`d_rdp_ports0` (`7450+N:3389`, respects `d_bind`) in `env.rc`, `tests/lock.sh` Wayland GNOME checks, and `tests/test_env.sh` coverage.
+- Verified on amd64 nested: `d_distro=ubuntu d_test 11 gnomewl` (**0 failed**, crisp GNOME Shell 50 Activities screenshot), `d_rdp=1` port `7461:3389` listening + `xfreerdp3 /from-stdin:force -clipboard /auth-only` handshake succeeded, `d_exec -s` exposes `WAYLAND_DISPLAY`, Xwayland `DISPLAY=:0`, `XAUTHORITY`, and `DBUS_SYSTEM_BUS_ADDRESS` (`xset q` works), and no `rdp-pass` appears in `podman inspect` or `/proc/*/cmdline`/`environ`.
+- Remaining host-only check: build and run `d_test` on `DGX Spark` (arm64).
 
-### Phase 4 — Optional vendor-safe GPU pass-through (`d_dri_render`) & agent desktops
-- Add opt-in `d_dri_render=` to `env.rc` (default empty = CPU):
+### Phase 4 — Optional vendor-safe GPU pass-through (`d_dri_render`) & agent desktops (**Code implemented; host GPU & agent smoke-tests pending**)
+- Implemented opt-in `d_dri_render=` in `env.rc` (default empty = CPU) + unit test in `tests/test_env.sh`:
   - `d_dri_render=auto`: scans `/sys/class/drm/renderD*/device/vendor` and picks the first Mesa render node (Intel/AMD, skipping NVIDIA `0x10de`).
   - `d_dri_render=/dev/dri/renderD128`: passes that explicit render node (`--device "$node" --group-add keep-groups`). Never passes `/dev/dri/card*` or all of `/dev/dri`.
-- Verify 2× concurrent GPU-accelerated instances on `hwd23` (`drm-engine-render` active, host desktop unaffected).
-- Smoke-test `gnomewl-antigravity` / `gnomewl-opencode` (`--ozone-platform-hint=auto` / Xwayland).
-- Separate host-only investigation on DGX Spark: NVIDIA Container Toolkit CDI (`--device nvidia.com/gpu=all`) with rootless podman if GPU acceleration on arm64 is desired.
+- Remaining host-only checks:
+  - Verify 2× concurrent GPU-accelerated instances on `hwd23` (`drm-engine-render` active, host desktop unaffected).
+  - Smoke-test `gnomewl-antigravity` / `gnomewl-opencode` (`--ozone-platform-hint=auto` / Xwayland).
+  - Separate host-only investigation on DGX Spark: NVIDIA Container Toolkit CDI (`--device nvidia.com/gpu=all`) with rootless podman if GPU acceleration on arm64 is desired.
 
-### Phase 5 — Docs, gallery, and CI
-- Update `README.md`, `AGENTS.md`, `.agents/skills/add-desktop/SKILL.md` (no-hyphen target rule, Wayland lock/screenshot checks), and capture `docs/ubuntu/{gnomewl,labwc}.png` via `d_screenshots`.
-- Verify GitHub Actions CI (`shellcheck` + `tests/test_env.sh`) passes cleanly.
+### Phase 5 — Docs, gallery, and CI (**DONE** 2026-11-26)
+- Updated `README.md`, `AGENTS.md`, `.agents/skills/add-desktop/SKILL.md` (no-hyphen target rule, Wayland lock/screenshot checks), `docs/README.md`, `.github/workflows/ci.yml`, and captured `docs/ubuntu/{gnomewl,labwc}.png` via `d_screenshots`.
+- Verified local CI checks (`shellcheck` + `bash tests/test_env.sh`) pass cleanly with 0 warnings / 0 failures.
 
 ---
 

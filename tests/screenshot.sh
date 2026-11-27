@@ -24,8 +24,17 @@ elif command -v spectacle >/dev/null; then
     spectacle -b -n -f -o "$out"
 elif command -v scrot >/dev/null; then
     scrot -o "$out"
+elif command -v grim >/dev/null; then
+    senv="/tmp/runtime-$(id -u)/session.env"
+    if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -r "$senv" ]; then
+        set -a
+        # shellcheck source=/dev/null
+        . "$senv"
+        set +a
+    fi
+    grim "$out"
 else
-    echo "screenshot.sh: no xfce4-screenshooter, screengrab, gnome-screenshot, spectacle or scrot in this stage" >&2
+    echo "screenshot.sh: no xfce4-screenshooter, screengrab, gnome-screenshot, spectacle, scrot or grim in this stage" >&2
     exit 2
 fi
 [ -s "$out" ] || { echo "screenshot.sh: $out is missing or empty" >&2; exit 1; }

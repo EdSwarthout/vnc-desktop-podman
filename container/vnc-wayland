@@ -1,0 +1,114 @@
+#!/bin/bash
+# vnc-wayland: Wayland session launcher for start.sh (used by labwc in place of
+# vncserver-wrapper). Starts a session D-Bus, headless labwc (pixman when no /dev/dri
+# render node is present, gles2 otherwise), configures $VNC_RESOLUTION via wlr-randr,
+# and runs wayvnc on 0.0.0.0:5901 for websockify/noVNC and VNC viewers. Exits when
+# either labwc or wayvnc ends (or on SIGTERM/SIGINT).
+set -u
+
+uid=$(id -u)
+export XDG_RUNTIME_DIR="/tmp/runtime-$uid"
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_CLASS=user
+export XDG_CURRENT_DESKTOP=wlroots
+unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
+
+# Start session D-Bus so labwc and every child share it.
+eval "$(dbus-launch --sh-syntax)"
+
+# Pick software pixman rendering when no DRM render node is present; when a Mesa render
+# node is passed in (--device /dev/dri/renderD*), let wlroots use gles2 on it.
+if [ -z "${WLR_RENDERER:-}" ]; then
+    render_node=
+    for n in /dev/dri/renderD*; do
+        [ -c "$n" ] && { render_node=$n; break; }
+    done
+    if [ -n "$render_node" ]; then
+        export WLR_RENDER_DRM_DEVICE="${WLR_RENDER_DRM_DEVICE:-$render_node}"
+    else
+        export WLR_RENDERER=pixman
+    fi
+fi
+
+_kill_jobs() {
+    local p
+    for p in $(jobs -p); do kill "$p" 2>/dev/null || true; done
+}
+trap '_kill_jobs' TERM INT
+
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 labwc &
+lpid=$!
+
+sock=
+for _ in $(seq 100); do
+    for s in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+        [ -S "$s" ] && { sock=$s; break; }
+    done
+    [ -n "$sock" ] && break
+    kill -0 "$lpid" 2>/dev/null || { echo "vnc-wayland: labwc failed to start" >&2; exit 1; }
+    sleep 0.1
+done
+[ -n "$sock" ] || { echo "vnc-wayland: labwc Wayland socket did not appear" >&2; _kill_jobs; exit 1; }
+export WAYLAND_DISPLAY
+WAYLAND_DISPLAY=$(basename "$sock")
+
+wlr-randr --output HEADLESS-1 --custom-mode "${VNC_RESOLUTION:-1440x900}" \
+    || echo "vnc-wayland: warning: wlr-randr could not set mode" >&2
+
+# Detect Xwayland DISPLAY if labwc spawned one.
+xdisp=
+for s in /tmp/.X11-unix/X*; do
+    if [ -S "$s" ]; then
+        xdisp=":${s##*X}"
+        break
+    fi
+done
+
+# Record session environment for `d_exec -s` and `tests/screenshot.sh`.
+(
+    umask 077
+    {
+        printf 'WAYLAND_DISPLAY=%s\n' "$WAYLAND_DISPLAY"
+        printf 'XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR"
+        printf 'XDG_SESSION_TYPE=%s\n' "$XDG_SESSION_TYPE"
+        printf 'XDG_CURRENT_DESKTOP=%s\n' "$XDG_CURRENT_DESKTOP"
+        printf 'DBUS_SESSION_BUS_ADDRESS=%s\n' "${DBUS_SESSION_BUS_ADDRESS:-}"
+        printf 'SHELL=%s\n' "${SHELL:-/bin/bash}"
+        [ -n "$xdisp" ] && printf 'DISPLAY=%s\n' "$xdisp"
+    } > "$XDG_RUNTIME_DIR/session.env"
+)
+
+# wayvnc 0.9.1 with enable_auth=true advertises only RSA-AES/TLSPlain, which Ubuntu's
+# noVNC cannot authenticate against. Default to auth-free (pair with d_bind=127.0.0.1 on
+# untrusted networks); WAYVNC_AUTH=1 enables RSA-AES auth for native TigerVNC clients.
+if [ "${WAYVNC_AUTH:-0}" = 1 ]; then
+    wdir="$HOME/.config/wayvnc"
+    mkdir -p "$wdir" && chmod 700 "$wdir"
+    if [ ! -s "$wdir/rsa_key.pem" ]; then
+        ( umask 077; openssl genrsa -traditional -out "$wdir/rsa_key.pem" 2048 2>/dev/null )
+    fi
+    pw=
+    [ -s "$HOME/.config/vnc-desktop/wayvnc-pass" ] && pw=$(cat "$HOME/.config/vnc-desktop/wayvnc-pass")
+    (
+        umask 077
+        printf '%s\n' \
+            'enable_auth=true' \
+            "username=$(id -un)" \
+            "password=${pw}" \
+            "rsa_private_key_file=$wdir/rsa_key.pem" \
+            'address=0.0.0.0' \
+            'port=5901' \
+            > "$wdir/config"
+    )
+    wayvnc -r -C "$wdir/config" &
+else
+    wayvnc -r 0.0.0.0 5901 &
+fi
+
+rc=0
+wait -n || rc=$?
+rm -f "$XDG_RUNTIME_DIR/session.env"
+_kill_jobs
+wait
+exit "$rc"

@@ -1,0 +1,79 @@
+ARG BASE=localhost/vnc-desktop-ubuntu:browser-2604
+
+# labwc Wayland desktop (d_target=labwc), on a distro's browser stage (Chrome, the CLI
+# installers, noVNC/websockify, nested podman). Runs labwc headless (WLR_RENDERER=pixman
+# without a GPU, or gles2 on a Mesa render node) and serves it over wayvnc + noVNC.
+# One stage per distro that has it; d_build picks the stage named like d_distro, with
+# BASE=localhost/vnc-desktop-<distro>:browser[-<version>], and tags the image
+# vnc-desktop-<distro>:labwc[-<version>]. The build context is the repo root.
+#   ubuntu - Ubuntu 26.04 + labwc + wayvnc
+
+# ---------------------------------------------------------------------------------------
+# Stage "ubuntu"
+FROM ${BASE} AS ubuntu
+USER root
+
+# d_build passes these to every Containerfile. The user itself comes with the base image
+# (as does ENV USERID), so they're unused here.
+ARG USERID
+ARG USER_UID
+ARG USER_GID
+
+# labwc: lightweight wlroots stacking Wayland compositor (no cap_sys_nice file caps that
+#   break nested podman, unlike Arch's sway).
+# wayvnc: VNC server for Wayland (replaces TigerVNC Xvnc; websockify/noVNC unchanged).
+# foot: native Wayland terminal; grim: Wayland screenshots; wtype: Wayland keyboard input
+#   (tests/lock.sh); wlr-randr: sets HEADLESS-1 to $VNC_RESOLUTION; swaybg: wallpaper;
+#   xwayland: X11 app compatibility; openssl: traditional RSA key for opt-in WAYVNC_AUTH=1.
+# keep list sorted
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    foot \
+    grim \
+    labwc \
+    openssl \
+    swaybg \
+    wayvnc \
+    wlr-randr \
+    wtype \
+    xwayland \
+    && { mountpoint -q /var/cache/apt-ubuntu || apt-get clean; } \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin \
+    && ! command -v swaylock >/dev/null
+
+# System-wide labwc defaults (overridable by ~/.config/labwc/): enable Xwayland, a right-click
+# root menu (Terminal, Chrome, Reconfigure, Exit), and a clean background + initial terminal.
+RUN mkdir -p /etc/xdg/labwc
+COPY <<'EOF' /etc/xdg/labwc/rc.xml
+<?xml version="1.0"?>
+<labwc_config>
+  <core>
+    <xwayland>yes</xwayland>
+  </core>
+</labwc_config>
+EOF
+COPY <<'EOF' /etc/xdg/labwc/menu.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu>
+  <menu id="root-menu" label="labwc">
+    <item label="Terminal">
+      <action name="Execute" command="foot" />
+    </item>
+    <item label="Google Chrome">
+      <action name="Execute" command="google-chrome --ozone-platform=wayland" />
+    </item>
+    <separator />
+    <item label="Reconfigure">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Exit">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>
+EOF
+RUN printf '%s\n' 'swaybg -c "#1e293b" &' 'foot &' > /etc/xdg/labwc/autostart \
+    && chmod 644 /etc/xdg/labwc/autostart
+
+COPY --chmod=755 container/vnc-wayland /usr/local/bin/vnc-wayland
+
+USER ${USERID}

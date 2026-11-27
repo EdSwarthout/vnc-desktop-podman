@@ -15,6 +15,8 @@ Desktops are Layer 2 images built on a distro's `browser` stage
 ## Procedure
 
 1. **Create or extend `container/<desktop>/Containerfile`:**
+   - Target names must be **hyphen-free** (e.g. `gnomewl`, `labwc`): `env.rc`'s `_d_distro`
+     parses any `X-Y` target as desktop `X` + agent `Y`.
    - New directory: start with `ARG BASE=localhost/vnc-desktop-<distro>:browser[-<version>]`
      and a header comment listing stages (follow `container/xfce/Containerfile`).
    - Add stage `FROM ${BASE} AS <distro>`, `USER root`, and declare unused
@@ -27,11 +29,18 @@ Desktops are Layer 2 images built on a distro's `browser` stage
    - End with `USER ${USERID}`.
 
 2. **Prototype in a throwaway nested instance first:**
-   - Verify an X11 session exists (Wayland-only sessions like GNOME Shell 50 cannot run on
-     TigerVNC).
+   - Verify whether the desktop has an X11 session or is Wayland-only:
+     - **X11 desktop:** runs under TigerVNC via `/usr/local/bin/vnc-session`.
+     - **Wayland wlroots desktop** (e.g. `labwc`): runs headless + `wayvnc` via
+       `/usr/local/bin/vnc-wayland` (`start.sh` switches to it when executable), writes
+       `$XDG_RUNTIME_DIR/session.env` for `d_exec -s`, uses `grim` for screenshots and
+       `wtype` in `tests/lock.sh`.
+     - **Wayland non-wlroots desktop** (e.g. `gnomewl`): runs `--headless --wayland` +
+       mirror-mode RDP bridged full-screen onto Xvnc `:1` via `xfreerdp3` inside
+       `/usr/local/bin/vnc-session`, writing `$XDG_RUNTIME_DIR/session.env` for `d_exec -s`.
    - Check whether the session manager requires systemd/logind; if so, start components
      directly (as in Ubuntu's `gnome`) or run a stand-in per-user system D-Bus (as in
-     Debian's `gnome`).
+     Debian's `gnome`, plus `mock-logind.py` in `gnomewl`).
    - Test package lists interactively via `podman exec -u root` before editing the
      Containerfile.
 

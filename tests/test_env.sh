@@ -264,5 +264,82 @@ for bad in \
 done
 [ "$bad_ok" -eq 1 ] && pass "vnc-pkg rejects invalid commands, flags, paths, and URLs"
 
+# 11. Wayland desktops (labwc, gnomewl), d_rdp, and d_dri_render
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/cache'; d_target=labwc d_build")
+if grep -Fq -- 'container/labwc/Containerfile' <<< "$out" \
+   && grep -Fq -- '-t vnc-desktop-ubuntu:labwc-2604' <<< "$out"; then
+    pass "d_build labwc uses container/labwc/Containerfile"
+else
+    fail "d_build labwc" "got: $out"
+fi
+
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/cache'; d_target=gnomewl d_build")
+if grep -Fq -- 'container/gnomewl/Containerfile' <<< "$out" \
+   && grep -Fq -- '-t vnc-desktop-ubuntu:gnomewl-2604' <<< "$out"; then
+    pass "d_build gnomewl uses container/gnomewl/Containerfile"
+else
+    fail "d_build gnomewl" "got: $out"
+fi
+
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/h'; d_target=gnomewl-antigravity d_select 2")
+if [[ $out == "vnc-desktop-ubuntu-gnomewl-antigravity-2604-7202 $tmp/h/vnc-desktop-ubuntu-gnomewl-antigravity-2604-7202 ports 7202 6382" ]]; then
+    pass "gnomewl-antigravity parses as agent desktop on gnomewl"
+else
+    fail "gnomewl-antigravity" "got: $out"
+fi
+
+out=$(run_env "VNC_PASSWORD=x container=; source '$repo/env.rc'; d_dir='$tmp/rdp1'; d_target=gnomewl; d_select 11; d_run")
+if grep -Fq -- '-p 6911:5901 -p 6091:6080' <<< "$out" && ! grep -Fq ':3389' <<< "$out"; then
+    pass "d_run gnomewl omits RDP port when d_rdp is unset"
+else
+    fail "d_run gnomewl no rdp" "got: $out"
+fi
+
+out=$(run_env "VNC_PASSWORD=x container=; source '$repo/env.rc'; d_dir='$tmp/rdp2'; d_target=gnomewl; d_rdp=1; d_select 11; d_run")
+if grep -Fq -- '-p 6911:5901 -p 6091:6080 -p 7461:3389' <<< "$out"; then
+    pass "d_run gnomewl publishes 7450+N:3389 when d_rdp=1"
+else
+    fail "d_run gnomewl rdp" "got: $out"
+fi
+
+out=$(run_env "VNC_PASSWORD=x container=; source '$repo/env.rc'; d_dir='$tmp/rdp3'; d_target=gnomewl; d_rdp=1; d_bind=127.0.0.1; d_select 11; d_run")
+if grep -Fq -- '-p 127.0.0.1:6911:5901 -p 127.0.0.1:6091:6080 -p 127.0.0.1:7461:3389' <<< "$out"; then
+    pass "d_run gnomewl RDP port respects d_bind=127.0.0.1"
+else
+    fail "d_run gnomewl rdp bind" "got: $out"
+fi
+
+out=$(run_env "VNC_PASSWORD=x container=; source '$repo/env.rc'; d_dir='$tmp/rdp4'; d_target=lxqt; d_rdp=1; d_select 1; d_run")
+if ! grep -Fq ':3389' <<< "$out"; then
+    pass "d_run ignores d_rdp=1 on targets without RDP"
+else
+    fail "d_run lxqt rdp" "got: $out"
+fi
+
+mkdir -p "$tmp/rdp5/vnc-desktop-ubuntu-gnomewl-2604-6911/.config/vnc-desktop"
+printf 'topsecret\n' > "$tmp/rdp5/vnc-desktop-ubuntu-gnomewl-2604-6911/.config/vnc-desktop/rdp-pass"
+out=$(run_env "container=; source '$repo/env.rc'; d_dir='$tmp/rdp5'; xfreerdp3() { echo \"[xfreerdp3 \$*]\"; }; d_target=gnomewl; d_select 11; d_rdp")
+if grep -Fq -- '[xfreerdp3 /v:127.0.0.1:7461 /u:tester /from-stdin:force -clipboard /cert:ignore]' <<< "$out" \
+   && ! grep -Fq 'topsecret' <<< "$out"; then
+    pass "d_rdp invokes xfreerdp3 with /from-stdin:force -clipboard and no password in argv"
+else
+    fail "d_rdp" "got: $out"
+fi
+
+if run_env "container=; source '$repo/env.rc'; d_dir='$tmp/rdp5'; d_target=lxqt; d_select 1; d_rdp" >/dev/null 2>&1; then
+    fail "d_rdp non-rdp target" "expected d_rdp to reject lxqt"
+else
+    pass "d_rdp rejects targets without an RDP port"
+fi
+
+out=$(run_env "VNC_PASSWORD=x container=; source '$repo/env.rc'; d_dir='$tmp/dri1'; d_dri_render=/dev/dri/card0; d_select 1; d_run" 2>&1)
+if grep -Fq 'ignoring invalid d_dri_render' <<< "$out" \
+   && ! grep -Fq -- '--device /dev/dri/card0' <<< "$out" \
+   && ! grep -Fq -- '--group-add keep-groups' <<< "$out"; then
+    pass "d_dri_render rejects /dev/dri/card0 and passes no DRM device"
+else
+    fail "d_dri_render card0" "got: $out"
+fi
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]
