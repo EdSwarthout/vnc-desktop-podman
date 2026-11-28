@@ -100,7 +100,7 @@ Top-level files:
 ## Where you are probably running
 Coding agents usually run *inside* an instance with this repo on the home volume. When
 `$container` is set, `env.rc` switches to nested paths (`d_dir=/home/$d_user/Containers`,
-instance `<parent>_<image>-<tag>-<port>`, `/var/cache/apt-<distro>` cache mounts, no
+instance `<parent_port>-<short_distro>-<short_target>-<port>`, `/var/cache/apt-<distro>` cache mounts, no
 `--hostname`), so `d_build`/`d_run` operate on the nested podman, never the host's. Host
 NFS paths and other UIDs are not testable inside an instance — say so instead of guessing.
 See `.agents/skills/nested-testing/SKILL.md` for full testing commands.
@@ -166,8 +166,12 @@ See `.agents/skills/nested-testing/SKILL.md` for full testing commands.
   `d_bind=127.0.0.1` in `.env` restricts `d_run` to localhost. Default `d_run_opts` is
   `("-d" "--cap-add=NET_RAW")`; debug `pasta` host-gateway flags are opt-in in `.env`.
   `label=disable` (not `:z`) on mounts.
-- **Port & instance scheme** (N = 1..49): `<image>-<tag>-<VNC port>` (nested:
-  `<parent>_<name>`). VNC / noVNC bases: ubuntu 6900/6080, debian 6950/6130, devtools
+- **Port & instance scheme** (N = 1..49): `<short_distro>-<short_target>-<VNC port>`
+  (`u26`, `d13`, `f45`, `arch`; agents abbreviated `agy`/`oc`/`cl`, e.g. `u26-lxqt-6901`,
+  `u26-gnome-agy-7201`; nested prefixes the parent port chain: `7201-u26-gnome-cl-7401`).
+  `d_target` accepts both long (`gnome-antigravity`) and abbreviated (`gnome-agy`,
+  `lxqt-oc`, `gnome-cl`) forms; image tags keep the full name (`vnc-desktop-ubuntu:gnome-antigravity-2604`).
+  VNC / noVNC bases: ubuntu 6900/6080, debian 6950/6130, devtools
   7000/6180, archlinux 7050/6230, opencode 7150/6330, antigravity 7200/6380, fedora
   7350/6530, claude 7400/6580 (7100/6280 reserved for omarchy). Same distro/layer shares
   ports across targets; `d_run_new`, `d_screenshots`, and `d_test` check `_d_port_used`.

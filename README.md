@@ -60,7 +60,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
    `.env` (step 2) rather than editing the default in `env.rc`.
    Everything else is derived from it:
    - `$d_dir/<instance name>` — each instance's home dir, named like the instance
-     (Ubuntu's `lxqt`, instance 1 → `$d_dir/vnc-desktop-ubuntu-lxqt-2604-6901`; see
+     (Ubuntu's `lxqt`, instance 1 → `$d_dir/u26-lxqt-6901`; see
      [Run an instance](#run-an-instance)). Set `d_homes0[debian]=/some/dir` etc. in
      `.env` to keep a distro's homes elsewhere.
    - `$d_dir/apt-cache-<distro>/archives` — downloaded packages, one cache per
@@ -198,11 +198,16 @@ run beside the distro's plain desktops. Every image also has the
 | `gnome-claude` | the Claude desktop app (`claude-desktop`, beta) | GNOME Flashback | ubuntu | 7400+N / 6580+N | [container/claude](container/claude/README.md) |
 
 ```bash
-d_target=lxqt-opencode d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first
-d_select 1; d_target=lxqt-opencode d_run        # vnc-desktop-ubuntu-lxqt-opencode-2604-7151
-d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's
-d_target=gnome-opencode d_run                  # on Ubuntu's GNOME Flashback instead
+d_target=lxqt-opencode d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first (lxqt-oc also works)
+d_select 1; d_target=lxqt-oc d_run              # u26-lxqt-oc-7151
+d_distro=fedora d_target=lxqt-oc d_run          # Fedora's: f45-lxqt-oc-7151
+d_target=gnome-oc d_run                         # on Ubuntu's GNOME Flashback instead
 ```
+
+`d_target` accepts either the full agent name (`opencode`, `antigravity`, `claude`) or
+its short form (`oc`, `agy`, `cl`), e.g. `gnome-agy` or `gnome-cl`. Image tags always use
+the full name (`vnc-desktop-ubuntu:gnome-antigravity-2604`), while instance names use the
+short form (`u26-gnome-agy-7201`).
 
 The ports belong to the agent, not the desktop: `lxqt-opencode` and `gnome-opencode`
 on the same N want the same ports, so run them on different numbers.
@@ -241,7 +246,7 @@ distro has (the default, `lxqt`, isn't on Debian or Arch):
 d_distro=debian d_0                      # podman pull docker.io/library/debian:trixie
 d_distro=debian d_target=gnome d_build   # vnc-desktop-debian:gnome-13
 d_select 5
-d_distro=debian d_target=gnome d_run     # vnc-desktop-debian-gnome-13-6955, home $d_dir/vnc-desktop-debian-gnome-13-6955
+d_distro=debian d_target=gnome d_run     # d13-gnome-6955, home $d_dir/d13-gnome-6955
 ```
 Each distro's instances have their own names, homes and ports (see [Run an
 instance](#run-an-instance)), so instance 5 of every distro can run side by side.
@@ -306,22 +311,22 @@ name comes from the image tag and the VNC port (below). The agent desktops and
 same agent on two distros shares its ports. Nested instances, run inside an
 instance, are named differently; see item 4 of "Inside the container".
 
-An instance is named after its image and tag, and ends in its VNC host port:
-`vnc-desktop-<distro>-<target>[-<version>]-<VNC port>`. Its container, hostname and home
+An instance is named `<short_distro>-<short_target>-<VNC port>` (`u26`, `d13`, `f45`,
+`arch`, with agents abbreviated `oc`/`agy`/`cl`). Its container, hostname and home
 (under `$d_dir`) all have that name.
 
 | Distro / target | Instance N, e.g. | VNC port (host) | noVNC port (host) |
 |-----------------|------------------|-----------------|-------------------|
-| ubuntu          | `vnc-desktop-ubuntu-lxqt-2604-<6900+N>` | 6900+N | 6080+N |
-| debian          | `vnc-desktop-debian-gnome-13-<6950+N>`  | 6950+N | 6130+N |
-| archlinux       | `vnc-desktop-archlinux-openbox-<7050+N>` | 7050+N | 6230+N |
-| fedora          | `vnc-desktop-fedora-lxqt-45-<7350+N>`   | 7350+N | 6530+N |
-| `devtools`      | `vnc-desktop-ubuntu-devtools-2604-<7000+N>` | 7000+N | 6180+N |
-| `*-opencode`    | `vnc-desktop-ubuntu-lxqt-opencode-2604-<7150+N>` | 7150+N | 6330+N |
-| `*-antigravity` | `vnc-desktop-fedora-lxqt-antigravity-45-<7200+N>` | 7200+N | 6380+N |
-| `*-claude`      | `vnc-desktop-ubuntu-gnome-claude-2604-<7400+N>` | 7400+N | 6580+N |
+| ubuntu          | `u26-lxqt-<6900+N>` | 6900+N | 6080+N |
+| debian          | `d13-gnome-<6950+N>`  | 6950+N | 6130+N |
+| archlinux       | `arch-openbox-<7050+N>` | 7050+N | 6230+N |
+| fedora          | `f45-lxqt-<7350+N>`   | 7350+N | 6530+N |
+| `devtools`      | `u26-devtools-<7000+N>` | 7000+N | 6180+N |
+| `*-opencode` / `*-oc`    | `u26-lxqt-oc-<7150+N>` | 7150+N | 6330+N |
+| `*-antigravity` / `*-agy` | `f45-lxqt-agy-<7200+N>` | 7200+N | 6380+N |
+| `*-claude` / `*-cl`      | `u26-gnome-cl-<7400+N>` | 7400+N | 6580+N |
 
-So Ubuntu's `lxqt`, instance 1, is `vnc-desktop-ubuntu-lxqt-2604-6901`, VNC 6901,
+So Ubuntu's `lxqt`, instance 1, is `u26-lxqt-6901`, VNC 6901,
 noVNC 6081. Every target has its own instance and home, but the ports are per distro
 (or per `devtools`/agent row): `xfce` and `lxqt` on the same N want the same ports
 (their names end alike), so run them on different numbers. `d_run_new` skips numbers
@@ -329,8 +334,8 @@ whose VNC port another container or home already ends in.
 
 `d_select N` only picks the number: the name, home and ports follow
 `d_distro` and `d_target` at the time of each command, so after `d_select 1`,
-`d_distro=debian d_target=gnome d_run` runs `vnc-desktop-debian-gnome-13-6951`, and
-`d_target=lxqt-opencode d_vnc` connects to `vnc-desktop-ubuntu-lxqt-opencode-2604-7151`.
+`d_distro=debian d_target=gnome d_run` runs `d13-gnome-6951`, and
+`d_target=lxqt-oc d_vnc` (or `d_target=lxqt-opencode d_vnc`) connects to `u26-lxqt-oc-7151`.
 
 ```bash
 d_select 1     # or d_run_new: the next number with no container and no home dir yet
@@ -423,13 +428,13 @@ which one exited.
    d_target=gnome d_run       # start it with a new home
    d_vnc                      # look at it (or tests/screenshot.sh, item 5)
    ```
-   Inside instance `vnc-desktop-ubuntu-lxqt-2604-6903`, nested instance N is named
-   `vnc-desktop-ubuntu-lxqt-2604-6903_<its usual name>`
-   (`…-6903_vnc-desktop-ubuntu-gnome-2604-6901`, `…-6903_vnc-desktop-debian-gnome-13-6951`)
+   Inside instance `u26-lxqt-6903`, nested instance N prefixes the parent's VNC port:
+   `<parent port>-<its usual name>`
+   (`6903-u26-gnome-6901`, `6903-d13-gnome-6951`; two levels deep: `6903-6901-u26-lxqt-6902`)
    and its home is `~/Containers/<that name>`,
    a plain directory you can read and copy files into.
    It shows that name in its VNC title and shell prompt, though `hostname`
-   still says `vnc-desktop-ubuntu-lxqt-2604-6903`. It uses the same VNC password as this instance. To check
+   still says `u26-lxqt-6903`. It uses the same VNC password as this instance. To check
    that nested podman itself works, run `tests/tests.sh` (ok/FAIL per check).
    Remove a nested instance when you're done:
    ```bash
@@ -488,10 +493,10 @@ In a new shell, `source env.rc` and `d_select N` before using `d_run`/`d_vnc`/`d
 
 ```bash
 podman ps                  # running instances
-podman logs vnc-desktop-ubuntu-lxqt-2604-6901          # entrypoint / VNC / websockify output
-podman stop vnc-desktop-ubuntu-lxqt-2604-6901          # stop
-podman start vnc-desktop-ubuntu-lxqt-2604-6901         # start again (same container)
-podman exec -it vnc-desktop-ubuntu-lxqt-2604-6901 bash # shell without the desktop
+podman logs u26-lxqt-6901          # entrypoint / VNC / websockify output
+podman stop u26-lxqt-6901          # stop
+podman start u26-lxqt-6901         # start again (same container)
+podman exec -it u26-lxqt-6901 bash # shell without the desktop
 ```
 
 **Change the VNC password:** delete `<home>/.config/tigervnc/passwd` on
@@ -547,7 +552,7 @@ the instance only, and `d_chrome_mcp` prints the command that lets Claude Code d
 that browser; `d_devtools` is Chrome DevTools from the shell (`d_devtools list_pages`).
 `d_target=devtools` is an image for this: Ubuntu's `browser` plus Chrome Canary,
 Puppeteer, Playwright (Node and Python, with `uv`), their MCP servers and Lighthouse
-(instances `vnc-desktop-ubuntu-devtools-2604-<7000+N>`, VNC 7000+N, noVNC 6180+N). See [chrome/README.md](chrome/README.md)
+(instances `u26-devtools-<7000+N>`, VNC 7000+N, noVNC 6180+N). See [chrome/README.md](chrome/README.md)
 for all of it and the other options.
 
 **Agent desktops:** `d_target=lxqt-opencode d_build`, then `d_select N;

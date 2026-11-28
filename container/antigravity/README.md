@@ -13,26 +13,26 @@ Spark as well as on amd64.
 
 ```bash
 source ./env.rc
-d_target=lxqt-antigravity d_build              # builds vnc-desktop-ubuntu:lxqt-2604 first
-d_select 1; d_target=lxqt-antigravity d_run    # vnc-desktop-ubuntu-lxqt-antigravity-2604-7201
-d_target=lxqt-antigravity d_vnc                # VNC 7201 (needs vncviewer)
-d_target=lxqt-antigravity d_novnc              # or noVNC on 6381, in a browser
-d_distro=fedora d_target=lxqt-antigravity d_run    # Fedora's: vnc-desktop-fedora-lxqt-antigravity-45-7201, same ports
+d_target=lxqt-agy d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first (lxqt-antigravity also works)
+d_select 1; d_target=lxqt-agy d_run        # u26-lxqt-agy-7201
+d_target=lxqt-agy d_vnc                    # VNC 7201 (needs vncviewer)
+d_target=lxqt-agy d_novnc                  # or noVNC on 6381, in a browser
+d_distro=fedora d_target=lxqt-agy d_run    # Fedora's: f45-lxqt-agy-7201, same ports
 ```
 
-On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-antigravity` (built on
-`vnc-desktop-ubuntu:gnome-2604`, instances `vnc-desktop-ubuntu-gnome-antigravity-2604-<VNC port>`).
+On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-antigravity` (or `gnome-agy`,
+built on `vnc-desktop-ubuntu:gnome-2604`, instances `u26-gnome-agy-<VNC port>`).
 It has the same ports as `lxqt-antigravity`, so run the two on different numbers.
 
-Keep `d_target=lxqt-antigravity` (or `gnome-antigravity`) on each line (or set it in your
-shell or `.env`): the instance's name, home and ports follow it.
+Keep `d_target=lxqt-agy` (or `lxqt-antigravity` / `gnome-agy` / `gnome-antigravity`) on
+each line (or set it in your shell or `.env`): the instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|
-| ubuntu | `vnc-desktop-ubuntu-lxqt-antigravity-2604-<VNC port>` | 7200+N | 6380+N |
-| fedora | `vnc-desktop-fedora-lxqt-antigravity-45-<VNC port>` | 7200+N | 6380+N |
+| ubuntu | `u26-lxqt-agy-<VNC port>` | 7200+N | 6380+N |
+| fedora | `f45-lxqt-agy-<VNC port>` | 7200+N | 6380+N |
 
-Nested (from inside an instance) it is `<this instance>_<that name>`.
+Nested (from inside an instance) it prefixes the parent's VNC port: `<parent port>-<that name>`.
 
 ## What's in it
 

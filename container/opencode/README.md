@@ -10,26 +10,26 @@ native arm64 CLI on arm64.
 
 ```bash
 source ./env.rc
-d_target=lxqt-opencode d_build              # builds vnc-desktop-ubuntu:lxqt-2604 first
-d_select 1; d_target=lxqt-opencode d_run    # vnc-desktop-ubuntu-lxqt-opencode-2604-7151
-d_target=lxqt-opencode d_vnc                # VNC 7151 (needs vncviewer)
-d_target=lxqt-opencode d_novnc              # or noVNC on 6331, in a browser
-d_distro=fedora d_target=lxqt-opencode d_run    # Fedora's: vnc-desktop-fedora-lxqt-opencode-45-7151, same ports
+d_target=lxqt-oc d_build                  # builds vnc-desktop-ubuntu:lxqt-2604 first (lxqt-opencode also works)
+d_select 1; d_target=lxqt-oc d_run        # u26-lxqt-oc-7151
+d_target=lxqt-oc d_vnc                    # VNC 7151 (needs vncviewer)
+d_target=lxqt-oc d_novnc                  # or noVNC on 6331, in a browser
+d_distro=fedora d_target=lxqt-oc d_run    # Fedora's: f45-lxqt-oc-7151, same ports
 ```
 
-On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-opencode` (built on
-`vnc-desktop-ubuntu:gnome-2604`, instances `vnc-desktop-ubuntu-gnome-opencode-2604-<VNC port>`).
+On Ubuntu it also comes on GNOME Flashback: `d_target=gnome-opencode` (or `gnome-oc`,
+built on `vnc-desktop-ubuntu:gnome-2604`, instances `u26-gnome-oc-<VNC port>`).
 It has the same ports as `lxqt-opencode`, so run the two on different numbers.
 
-Keep `d_target=lxqt-opencode` (or `gnome-opencode`) on each line (or set it in your
-shell or `.env`): the instance's name, home and ports follow it.
+Keep `d_target=lxqt-oc` (or `lxqt-opencode` / `gnome-oc` / `gnome-opencode`) on each line
+(or set it in your shell or `.env`): the instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|
-| ubuntu | `vnc-desktop-ubuntu-lxqt-opencode-2604-<VNC port>` | 7150+N | 6330+N |
-| fedora | `vnc-desktop-fedora-lxqt-opencode-45-<VNC port>` | 7150+N | 6330+N |
+| ubuntu | `u26-lxqt-oc-<VNC port>` | 7150+N | 6330+N |
+| fedora | `f45-lxqt-oc-<VNC port>` | 7150+N | 6330+N |
 
-Nested (from inside an instance) it is `<this instance>_<that name>`.
+Nested (from inside an instance) it prefixes the parent's VNC port: `<parent port>-<that name>`.
 
 ## What's in it
 

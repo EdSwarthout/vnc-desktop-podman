@@ -9,20 +9,20 @@ desktops or distros. Anthropic's apt repository has amd64 and arm64 packages.
 
 ```bash
 source ./env.rc
-d_target=gnome-claude d_build              # builds vnc-desktop-ubuntu:gnome-2604 first
-d_select 1; d_target=gnome-claude d_run    # vnc-desktop-ubuntu-gnome-claude-2604-7401
-d_target=gnome-claude d_vnc                # VNC 7401 (needs vncviewer)
-d_target=gnome-claude d_novnc              # or noVNC on 6581, in a browser
+d_target=gnome-cl d_build              # builds vnc-desktop-ubuntu:gnome-2604 first (gnome-claude also works)
+d_select 1; d_target=gnome-cl d_run    # u26-gnome-cl-7401
+d_target=gnome-cl d_vnc                # VNC 7401 (needs vncviewer)
+d_target=gnome-cl d_novnc              # or noVNC on 6581, in a browser
 ```
 
-Keep `d_target=gnome-claude` on each line (or set it in your shell or `.env`): the
-instance's name, home and ports follow it.
+Keep `d_target=gnome-cl` (or `gnome-claude`) on each line (or set it in your shell or
+`.env`): the instance's name, home and ports follow it.
 
 | Distro | Container name and home under `$d_dir` | VNC    | noVNC  |
 |--------|----------------------------------------|--------|--------|
-| ubuntu | `vnc-desktop-ubuntu-gnome-claude-2604-<VNC port>` | 7400+N | 6580+N |
+| ubuntu | `u26-gnome-cl-<VNC port>` | 7400+N | 6580+N |
 
-Nested (from inside an instance) it is `<this instance>_<that name>`.
+Nested (from inside an instance) it prefixes the parent's VNC port: `<parent port>-<that name>`.
 
 ## What's in it
 
