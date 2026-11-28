@@ -81,7 +81,7 @@ Under `container/` (build context is always the repo root):
   images only. Open issues: `TODO.md`.
 
 Top-level files:
-- `env.rc` — host/nested bash helpers (`d_0`, `d_build`, `d_build_fresh`, `d_select`,
+- `env.rc` — host/nested bash helpers (`d_0`, `d_pull`, `d_build`, `d_build_fresh`, `d_select`,
   `d_run_new`, `d_run`, `d_run_cmd`, `d_vnc`, `d_novnc`, `d_logs`, `d_commit`,
   `d_commit_watch`, `d_uncommit`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`). Maps
   `ubuntu`/`debian` → `deb/` and `devtools` → `chrome/` via `d_dirs`. Labels every built

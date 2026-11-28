@@ -37,7 +37,7 @@ Why use it: [A full Linux desktop for your AI agent, in a rootless container](do
 | `chrome/`       | Chrome automation: `env.rc` (`d_chrome`, `d_chrome_mcp`, `d_devtools`, sourced by the top-level `env.rc`), an example script and a [README](chrome/README.md) of the options |
 | `tests/`        | `tests.sh` (nested podman checks), `screenshot.sh` (desktop screenshot), `lock.sh` (the screen can't be locked), `test_env.sh` (`env.rc` unit tests) |
 | `docs/`         | [Screenshots](docs/README.md) of each desktop; [article](docs/Advantages-article.md) on the advantages |
-| `env.rc`        | Shell helpers (`d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
+| `env.rc`        | Shell helpers (`d_pull`, `d_build`, `d_select`, `d_run`, `d_vnc`, `d_novnc`, `d_exec`, `d_all`, `d_screenshots`, `d_test`, `d_rm`, …)    |
 | `.containerignore` | Keeps `d_build`'s context (the repo root) to the files the Containerfiles copy |
 | `.env`          | Your VNC password and local settings (not in git)             |
 
@@ -219,17 +219,19 @@ multi-arch (`amd64` and `arm64`) Podman images to GitHub Container Registry:
 - `ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604`
 - `ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-claude-2604`
 
-To pull and use one with `env.rc`:
+To pull and tag one locally for `d_run` (falls back with a message telling you a local
+`d_build` is required if the target isn't published on `$d_registry`):
 
 ```bash
-podman pull ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604
-podman tag ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604 localhost/vnc-desktop-ubuntu:gnome-antigravity-2604
+d_target=gnome-antigravity d_pull
+# or:
+d_target=gnome-claude d_pull
 ```
 
 Prebuilt images use the Containerfile default user `ed` (`1001:1001`). On a host whose
 user has a different UID/GID, either pass `--userns=keep-id:uid=1001,gid=1001` (Podman
 4.3+, and set `d_user=ed` in `.env` so the home mounts at `/home/ed`) or build locally
-with `d_build`.
+with `d_build`. Override `d_registry` in `.env` to pull from a fork.
 
 ### Distros
 

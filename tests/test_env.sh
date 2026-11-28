@@ -19,10 +19,15 @@ run_env() {
         set -euo pipefail
         mkdir -p "$HOME"
         podman() {
+            if [ "${1:-}" = image ] && [ "${2:-}" = inspect ]; then
+                [ -n "${STUB_INSPECT:-}" ] && echo "$STUB_INSPECT"
+                return 0
+            fi
             echo "[podman $*]"
             case ${1:-} in
                 container) return 1 ;;   # container exists -> false by default
                 ps) return 0 ;;
+                pull) [ -z "${STUB_PULL_FAIL:-}" ] ;;
                 # image exists: true only for the images listed in $STUB_IMAGES
                 image) [ "${2:-}" != exists ] || [[ " ${STUB_IMAGES:-} " == *" ${3:-} "* ]] ;;
             esac
@@ -263,6 +268,38 @@ for bad in \
     fi
 done
 [ "$bad_ok" -eq 1 ] && pass "vnc-pkg rejects invalid commands, flags, paths, and URLs"
+
+# 11. d_pull: pulls from GHCR and retags locally, or tells user a local d_build is required
+out=$(run_env "STUB_INSPECT=ed container=; source '$repo/env.rc'; d_target=gnome-antigravity d_pull" 2>&1)
+if grep -Fq '[podman pull ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604]' <<< "$out" \
+   && grep -Fq '[podman tag ghcr.io/edswarthout/vnc-desktop-ubuntu:gnome-antigravity-2604 localhost/vnc-desktop-ubuntu:gnome-antigravity-2604]' <<< "$out" \
+   && grep -Fq "image user is 'ed' (your d_user is 'tester')" <<< "$out"; then
+    pass "d_pull pulls from GHCR, tags locally, and notes differing image user"
+else
+    fail "d_pull success" "got: $out"
+fi
+
+out=$(run_env "container=; source '$repo/env.rc'; d_registry=ghcr.io/fork/ d_target=gnome-claude d_pull" 2>&1)
+if grep -Fq '[podman pull ghcr.io/fork/vnc-desktop-ubuntu:gnome-claude-2604]' <<< "$out" \
+   && grep -Fq '[podman tag ghcr.io/fork/vnc-desktop-ubuntu:gnome-claude-2604 localhost/vnc-desktop-ubuntu:gnome-claude-2604]' <<< "$out"; then
+    pass "d_pull respects d_registry override"
+else
+    fail "d_pull d_registry" "got: $out"
+fi
+
+out=$(run_env "STUB_PULL_FAIL=1 container=; source '$repo/env.rc'; d_target=lxqt d_pull" 2>&1 || true)
+if grep -Fq 'a local d_build is required (d_distro=ubuntu d_target=lxqt d_build)' <<< "$out" \
+   && ! grep -Fq '[podman tag ' <<< "$out"; then
+    pass "d_pull reports local d_build is required when image is unavailable"
+else
+    fail "d_pull unavailable" "got: $out"
+fi
+
+if run_env "container=; source '$repo/env.rc'; d_distro=debian d_target=kde d_pull" >/dev/null 2>&1; then
+    fail "d_pull invalid target" "expected debian+kde to fail"
+else
+    pass "d_pull rejects invalid distro+target"
+fi
 
 echo "$fails failed"
 [ "$fails" -eq 0 ]
